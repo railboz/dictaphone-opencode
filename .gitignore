@@ -1,0 +1,10 @@
+# Runtime assets installed by scripts/install.ps1
+bin/
+models/
+voice/
+
+# Dependencies and local files
+node_modules/
+*.log
+.DS_Store
+Thumbs.db

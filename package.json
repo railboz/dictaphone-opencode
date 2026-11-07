@@ -1,0 +1,41 @@
+{
+  "name": "opencode-whisper-dictation",
+  "version": "0.1.0",
+  "description": "Local, offline Whisper dictation plugin for OpenCode Desktop.",
+  "private": true,
+  "type": "module",
+  "main": "server.js",
+  "exports": {
+    ".": "./server.js",
+    "./gui-experimental": "./gui-experimental.cjs"
+  },
+  "files": [
+    "server.js",
+    "gui-experimental.cjs",
+    "scripts",
+    "README.md",
+    "LICENSE"
+  ],
+  "scripts": {
+    "check": "node --check server.js && node --check gui-experimental.cjs"
+  },
+  "keywords": [
+    "opencode",
+    "opencode-desktop",
+    "whisper",
+    "whisper.cpp",
+    "dictation",
+    "speech-to-text",
+    "stt"
+  ],
+  "license": "MIT",
+  "author": "opencode-whisper-dictation contributors",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/railboz/opencode-whisper-dictation.git"
+  },
+  "bugs": {
+    "url": "https://github.com/railboz/opencode-whisper-dictation/issues"
+  },
+  "homepage": "https://github.com/railboz/opencode-whisper-dictation#readme"
+}
