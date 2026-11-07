@@ -1,10 +1,12 @@
-# OpenCode Whisper Dictation
+# Dictaphone OpenCode
 
 Local, offline dictation for **OpenCode Desktop**.
 
 A **Parler** pill above the composer records your voice, transcribes it with
 [whisper.cpp](https://github.com/ggml-org/whisper.cpp) on your machine, and
 inserts the text into the composer. Audio never leaves your computer.
+
+**English** · [Français](README.fr.md)
 
 > The plugin UI is currently in French (`Parler`, `Écoute…`, `Transcription…`).
 > Labels live in `gui-experimental.cjs` and are easy to translate.
@@ -26,8 +28,8 @@ inserts the text into the composer. Audio never leaves your computer.
 - [OpenCode Desktop](https://opencode.ai) (the plugin uses the Desktop GUI API,
   not the terminal UI).
 - PowerShell 5.1 or newer.
-- About 600 MB of disk space for the multilingual model. The CUDA build
-  adds about 1.2 GB.
+- About 600 MB of disk space for the multilingual model. The CUDA build adds
+  about 1.2 GB.
 - A microphone.
 - Optional: an NVIDIA GPU and a recent driver for the CUDA build.
 
@@ -36,8 +38,8 @@ inserts the text into the composer. Audio never leaves your computer.
 1. Clone the repository:
 
    ```powershell
-   git clone https://github.com/railboz/opencode-whisper-dictation.git
-   cd opencode-whisper-dictation
+   git clone https://github.com/railboz/dictaphone-opencode.git
+   cd dictaphone-opencode
    ```
 
 2. Download whisper.cpp and the model:
@@ -53,7 +55,7 @@ inserts the text into the composer. Audio never leaves your computer.
    The script installs the runtime files to:
 
    ```text
-   %USERPROFILE%\.local\share\opencode-whisper-dictation
+   %USERPROFILE%\.local\share\dictaphone-opencode
    ```
 
 3. Register the plugin in `C:\Users\<you>\.config\opencode\opencode.json`:
@@ -63,7 +65,7 @@ inserts the text into the composer. Audio never leaves your computer.
      "$schema": "https://opencode.ai/config.json",
      "plugins": [
        {
-         "package": "C:/path/to/opencode-whisper-dictation",
+         "package": "C:/path/to/dictaphone-opencode",
          "options": {
            "language": "fr",
            "micLabel": "HyperX",
@@ -100,9 +102,9 @@ All options are optional.
 | `vadSilenceMs` | `1500` | Silence duration before auto-stop, in milliseconds. |
 | `vadMaxMs` | `120000` | Maximum recording duration, in milliseconds. |
 | `vadThreshold` | `0.012` | Voice activity threshold. Increase in a noisy room. |
-| `proxyPort` | `8892` | Local proxy port. |
+| `proxyPort` | `8897` | Local proxy port. |
 | `sttPort` | `8891` | whisper-server port. |
-| `root` | `%USERPROFILE%\.local\share\opencode-whisper-dictation` | Runtime directory containing `bin/` and `models/`. |
+| `root` | `%USERPROFILE%\.local\share\dictaphone-opencode` | Runtime directory containing `bin/` and `models/`. |
 | `whisperServer` | `<root>/bin/whisper-server.exe` | Custom whisper-server path. |
 | `whisperModel` | `<root>/models/ggml-large-v3-turbo-q5_0.bin` | Custom model path. |
 
@@ -131,7 +133,7 @@ Whisperlane uses the same one; disable it or change the `bind` in
 
 **HTTP 503 / "whisper n'est pas prêt".** whisper-server did not start. Check
 that `bin/whisper-server.exe` and `models/ggml-large-v3-turbo-q5_0.bin` exist,
-then read `%USERPROFILE%\.local\state\opencode-whisper-dictation\debug.log`.
+then read `%USERPROFILE%\.local\state\dictaphone-opencode\debug.log`.
 
 **The first dictation is slow.** The CUDA backend compiles kernels on first
 use. The plugin sends a warm-up request at startup; subsequent dictations are
@@ -153,9 +155,9 @@ your NVIDIA driver. The CPU build works without a GPU but is slower.
 ## Uninstall
 
 1. Remove the plugin entry from `opencode.json`.
-2. Delete `%USERPROFILE%\.local\share\opencode-whisper-dictation`.
+2. Delete `%USERPROFILE%\.local\share\dictaphone-opencode`.
 3. Delete the cloned repository.
-4. Optionally remove `%USERPROFILE%\.local\state\opencode-whisper-dictation`.
+4. Optionally remove `%USERPROFILE%\.local\state\dictaphone-opencode`.
 
 ## License
 
@@ -169,39 +171,3 @@ affiliated with this plugin.
 
 - [whisper.cpp](https://github.com/ggml-org/whisper.cpp) by Georgi Gerganov and contributors.
 - [OpenCode](https://opencode.ai) for the Desktop plugin API.
-
----
-
-## Français (résumé)
-
-**OpenCode Whisper Dictation** est un plugin de dictée locale pour OpenCode
-Desktop. Le son est transcrit par whisper.cpp sur la machine, puis inséré dans
-le composeur. Aucun service cloud.
-
-```powershell
-git clone https://github.com/railboz/opencode-whisper-dictation.git
-cd opencode-whisper-dictation
-powershell -ExecutionPolicy Bypass -File .\scripts\install.ps1 -Backend cuda
-```
-
-Ajoute ensuite le plugin dans `C:\Users\<toi>\.config\opencode\opencode.json` :
-
-```jsonc
-{
-  "plugins": [
-    {
-      "package": "C:/chemin/vers/opencode-whisper-dictation",
-      "options": {
-        "language": "fr",
-        "micLabel": "HyperX",
-        "vadSilenceMs": 1500,
-        "vadMaxMs": 120000
-      }
-    }
-  ]
-}
-```
-
-Redémarre OpenCode Desktop, clique sur **Parler** (`Ctrl+Shift+Espace`) et
-parle. L'écoute s'arrête après 1,5 s de silence ; le texte est inséré dans le
-composeur. Tout reste en local.

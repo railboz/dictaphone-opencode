@@ -1,4 +1,4 @@
-// opencode-whisper-dictation: GUI part.
+// Dictaphone OpenCode: GUI part.
 //
 // A mic pill above the composer. Click it, speak, and the recording stops
 // automatically after a short silence. The WAV is sent to the local proxy
@@ -102,7 +102,7 @@ function encodeWav(input, sampleRate) {
 const definition = Plugin.define({
   setup(ctx) {
     const options = ctx.options ?? {}
-    const proxyPort = Number(options.proxyPort ?? 8892)
+    const proxyPort = Number(options.proxyPort ?? 8897)
     const language = String(options.language ?? "fr")
     const micLabel = String(options.micLabel ?? "")
     const vadEnabled = options.vad !== false
@@ -110,7 +110,7 @@ const definition = Plugin.define({
     const vadMaxMs = Math.max(5_000, Number(options.vadMaxMs ?? 120_000))
     const vadMinSpeechMs = Math.max(100, Number(options.vadMinSpeechMs ?? 250))
     const vadThreshold = Math.max(0.002, Number(options.vadThreshold ?? 0.012))
-    const [state, updateState] = ctx.storage.memory("whisper-dictation.state", {
+    const [state, updateState] = ctx.storage.memory("dictaphone-opencode.state", {
       initial: { phase: "idle" },
     })
 

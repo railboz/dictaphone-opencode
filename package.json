@@ -1,5 +1,5 @@
 {
-  "name": "opencode-whisper-dictation",
+  "name": "dictaphone-opencode",
   "version": "0.1.0",
   "description": "Local, offline Whisper dictation plugin for OpenCode Desktop.",
   "private": true,
@@ -14,6 +14,7 @@
     "gui-experimental.cjs",
     "scripts",
     "README.md",
+    "README.fr.md",
     "LICENSE"
   ],
   "scripts": {
@@ -22,6 +23,7 @@
   "keywords": [
     "opencode",
     "opencode-desktop",
+    "dictaphone",
     "whisper",
     "whisper.cpp",
     "dictation",
@@ -29,13 +31,13 @@
     "stt"
   ],
   "license": "MIT",
-  "author": "opencode-whisper-dictation contributors",
+  "author": "Dictaphone OpenCode contributors",
   "repository": {
     "type": "git",
-    "url": "https://github.com/railboz/opencode-whisper-dictation.git"
+    "url": "https://github.com/railboz/dictaphone-opencode.git"
   },
   "bugs": {
-    "url": "https://github.com/railboz/opencode-whisper-dictation/issues"
+    "url": "https://github.com/railboz/dictaphone-opencode/issues"
   },
-  "homepage": "https://github.com/railboz/opencode-whisper-dictation#readme"
+  "homepage": "https://github.com/railboz/dictaphone-opencode#readme"
 }

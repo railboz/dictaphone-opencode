@@ -1,4 +1,4 @@
-// opencode-whisper-dictation: server part.
+// Dictaphone OpenCode: server part.
 //
 // - keeps a local whisper.cpp server warm for the GUI microphone pill
 // - proxies the GUI's WAV upload to whisper-server with CORS
@@ -13,10 +13,10 @@ import fs from "node:fs"
 import os from "node:os"
 import path from "node:path"
 
-const DEFAULT_ROOT = path.join(os.homedir(), ".local", "share", "opencode-whisper-dictation")
-const LOG_DIR = path.join(os.homedir(), ".local", "state", "opencode-whisper-dictation")
+const DEFAULT_ROOT = path.join(os.homedir(), ".local", "share", "dictaphone-opencode")
+const LOG_DIR = path.join(os.homedir(), ".local", "state", "dictaphone-opencode")
 const LOG_FILE = path.join(LOG_DIR, "debug.log")
-const SERVICES_KEY = Symbol.for("opencode-whisper-dictation.services")
+const SERVICES_KEY = Symbol.for("dictaphone-opencode.services")
 
 function log(scope, message) {
   try {
@@ -265,7 +265,7 @@ async function startWhisper(state, options, root) {
 }
 
 export default Plugin.define({
-  id: "opencode-whisper-dictation",
+  id: "dictaphone-opencode",
   async setup(ctx) {
     const options = ctx.options ?? {}
     const root = path.resolve(options.root ?? DEFAULT_ROOT)
@@ -277,7 +277,7 @@ export default Plugin.define({
     try {
       await startWhisper(state, options, root)
 
-      const port = Number(options.proxyPort ?? 8892)
+      const port = Number(options.proxyPort ?? 8897)
       if (state.proxy && state.proxyPort === port && state.proxy.listening) {
         // Hot reload: keep the socket and swap in the current request handler.
         state.proxy.removeAllListeners("request")

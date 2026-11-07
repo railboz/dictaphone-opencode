@@ -1,11 +1,11 @@
 #requires -Version 5.1
 <#
 .SYNOPSIS
-Downloads whisper.cpp and a Whisper model for opencode-whisper-dictation.
+Downloads whisper.cpp and a Whisper model for Dictaphone OpenCode.
 
 .DESCRIPTION
 Installs the runtime files outside the repository, by default in:
-  %USERPROFILE%\.local\share\opencode-whisper-dictation
+  %USERPROFILE%\.local\share\dictaphone-opencode
 
 .PARAMETER Backend
 cpu (default) or cuda. The cuda build requires an NVIDIA GPU and driver.
@@ -26,7 +26,7 @@ powershell -ExecutionPolicy Bypass -File .\scripts\install.ps1 -Backend cuda
 param(
     [ValidateSet("cpu", "cuda")]
     [string]$Backend = "cpu",
-    [string]$Root = (Join-Path $env:USERPROFILE ".local\share\opencode-whisper-dictation"),
+    [string]$Root = (Join-Path $env:USERPROFILE ".local\share\dictaphone-opencode"),
     [string]$Model = "ggml-large-v3-turbo-q5_0.bin",
     [string]$Release = "v1.9.2",
     [switch]$Force
@@ -55,7 +55,7 @@ if (Get-Command curl.exe -ErrorAction SilentlyContinue) {
     Invoke-WebRequest -Uri $url -OutFile $zip -UseBasicParsing
 }
 
-$extract = Join-Path $env:TEMP "opencode-whisper-dictation-$Backend"
+$extract = Join-Path $env:TEMP "dictaphone-opencode-$Backend"
 if (Test-Path $extract) { Remove-Item $extract -Recurse -Force }
 Expand-Archive -Path $zip -DestinationPath $extract -Force
 
@@ -94,7 +94,7 @@ Write-Host ""
 Write-Host "Add this plugin to ~/.config/opencode/opencode.json:"
 Write-Host ""
 Write-Host '  "plugins": [{'
-Write-Host '    "package": "C:/path/to/opencode-whisper-dictation",'
+Write-Host '    "package": "C:/path/to/dictaphone-opencode",'
 Write-Host '    "options": { "language": "fr" }'
 Write-Host '  }]'
 Write-Host ""
