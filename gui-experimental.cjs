@@ -12,6 +12,45 @@ const { Plugin, ComposerPill, Command } = require("@opencode/plugin/gui")
 
 const SAMPLE_RATE = 16000
 
+function portOf(value, fallback) {
+  const port = Number(value)
+  return Number.isInteger(port) && port > 0 && port <= 65535 ? port : fallback
+}
+
+// Whisper reports detected languages by full English name ("french"), while
+// the `language` option uses ISO codes ("fr").
+const LANGUAGE_NAMES = {
+  ar: "arabic",
+  cs: "czech",
+  da: "danish",
+  de: "german",
+  el: "greek",
+  en: "english",
+  es: "spanish",
+  fi: "finnish",
+  fr: "french",
+  he: "hebrew",
+  hi: "hindi",
+  hu: "hungarian",
+  id: "indonesian",
+  it: "italian",
+  ja: "japanese",
+  ko: "korean",
+  ms: "malay",
+  nl: "dutch",
+  no: "norwegian",
+  pl: "polish",
+  pt: "portuguese",
+  ro: "romanian",
+  ru: "russian",
+  sv: "swedish",
+  th: "thai",
+  tr: "turkish",
+  uk: "ukrainian",
+  vi: "vietnamese",
+  zh: "chinese",
+}
+
 // Whisper sometimes invents these on silence or background noise.
 const HALLUCINATIONS = [
   /^sous-titrage\b/i,
@@ -26,6 +65,10 @@ const HALLUCINATIONS = [
   /^sous-titres? (réalisés|par|de)\b/i,
   /^traduction par\b/i,
   /^ceci est un sous-titre/i,
+  /^thanks? for watching\b/i,
+  /^subtitles? (by|created by|provided by)\b/i,
+  /^transcribed by\b/i,
+  /^you can (subscribe|support)\b/i,
 ]
 
 function concatChunks(chunks) {
@@ -102,8 +145,11 @@ function encodeWav(input, sampleRate) {
 const definition = Plugin.define({
   setup(ctx) {
     const options = ctx.options ?? {}
-    const proxyPort = Number(options.proxyPort ?? 8897)
-    const language = String(options.language ?? "fr")
+    const proxyPort = portOf(options.proxyPort, 8897)
+    const language = String(options.language ?? "fr").trim() || "fr"
+    const languageKey = language.toLowerCase()
+    const languageName = LANGUAGE_NAMES[languageKey]
+    const acceptedLanguages = new Set([languageKey, languageName].filter(Boolean))
     const micLabel = String(options.micLabel ?? "")
     const vadEnabled = options.vad !== false
     const vadSilenceMs = Math.max(400, Number(options.vadSilenceMs ?? 1500))
@@ -113,6 +159,14 @@ const definition = Plugin.define({
     const [state, updateState] = ctx.storage.memory("dictaphone-opencode.state", {
       initial: { phase: "idle" },
     })
+
+    // A hot reload during a recording leaves the stored phase behind even
+    // though the recorder itself is gone. Start clean.
+    if (state.phase !== "idle") {
+      updateState((draft) => {
+        draft.phase = "idle"
+      })
+    }
 
     let active = null
     let starting = false
@@ -152,7 +206,19 @@ const definition = Plugin.define({
         preferred = devices.find(matches)
       }
       if (preferred?.deviceId) audio.deviceId = { exact: preferred.deviceId }
-      return navigator.mediaDevices.getUserMedia({ audio })
+      try {
+        return await navigator.mediaDevices.getUserMedia({ audio })
+      } catch (error) {
+        // The selected device may have been unplugged since enumeration.
+        if (!audio.deviceId) throw error
+        toast(
+          "Micro introuvable",
+          "Le micro configuré est indisponible ; micro par défaut utilisé.",
+          "warning",
+        )
+        delete audio.deviceId
+        return navigator.mediaDevices.getUserMedia({ audio })
+      }
     }
 
     async function start(screen) {
@@ -204,11 +270,17 @@ const definition = Plugin.define({
         processor.onaudioprocess = (event) => {
           const data = event.inputBuffer.getChannelData(0)
           chunks.push(new Float32Array(data))
-          if (!vadEnabled) return
 
           const now = performance.now()
           const elapsed = Math.min(1000, now - vad.lastAt)
           vad.lastAt = now
+
+          // The hard duration limit applies even when silence detection is off.
+          if (now - startedAt >= vadMaxMs) {
+            void stop()
+            return
+          }
+          if (!vadEnabled) return
 
           // Give the microphone a moment to settle before measuring silence.
           if (now - startedAt < 400) return
@@ -231,11 +303,7 @@ const definition = Plugin.define({
             vad.speechMs = Math.max(0, vad.speechMs - elapsed * 0.5)
           }
 
-          if (vad.heardSpeech && vad.silenceMs >= vadSilenceMs) {
-            void stop()
-            return
-          }
-          if (now - startedAt >= vadMaxMs) void stop()
+          if (vad.heardSpeech && vad.silenceMs >= vadSilenceMs) void stop()
         }
 
         // Keep the processor alive without monitoring the mic in the room.
@@ -284,6 +352,7 @@ const definition = Plugin.define({
       const recording = active
       if (!recording) return
       active = null
+      recording.processor.onaudioprocess = null
       setPhase("transcribing")
 
       try {
@@ -326,19 +395,45 @@ const definition = Plugin.define({
         form.append("response_format", "verbose_json")
         form.append("temperature", "0")
 
-        const response = await fetch(`http://127.0.0.1:${proxyPort}/transcribe`, {
-          method: "POST",
-          body: form,
-        })
-        if (!response.ok) throw new Error(`service local HTTP ${response.status}`)
+        let response
+        try {
+          response = await fetch(`http://127.0.0.1:${proxyPort}/transcribe`, {
+            method: "POST",
+            body: form,
+            signal: AbortSignal.timeout(400_000),
+          })
+        } catch (error) {
+          if (error?.name === "TimeoutError" || error?.name === "AbortError") {
+            throw new Error("whisper a mis trop de temps à répondre")
+          }
+          throw error
+        }
+        if (!response.ok) {
+          let detail = ""
+          try {
+            detail = String((await response.json())?.error ?? "")
+          } catch {}
+          throw new Error(detail || `service local HTTP ${response.status}`)
+        }
         const data = await response.json()
+        if (disposed) return
 
-        // A confident non-French detection usually means noise or music, not
-        // dictation; do not insert a hallucinated sentence.
+        // A confident different-language detection usually means noise or
+        // music, not dictation; do not insert a hallucinated sentence.
         const detected = String(data.detected_language ?? "").toLowerCase()
         const detectedProbability = Number(data.detected_language_probability ?? 0)
-        if (detected && !["fr", "french"].includes(detected) && detectedProbability >= 0.6) {
-          toast("Aucune parole détectée", "Le son ne ressemble pas à du français.", "warning")
+        if (
+          languageKey !== "auto" &&
+          languageName &&
+          detected &&
+          !acceptedLanguages.has(detected) &&
+          detectedProbability >= 0.6
+        ) {
+          toast(
+            "Aucune parole détectée",
+            "La langue détectée ne correspond pas à la langue configurée.",
+            "warning",
+          )
           return
         }
 
@@ -356,8 +451,9 @@ const definition = Plugin.define({
           return
         }
 
-        const screen = ctx.screen.current() ?? recording.screen
-        if (!screen) {
+        const current = ctx.screen.current()
+        const screen = current?.composer ? current : recording.screen
+        if (!screen?.composer) {
           toast("Ouvre une session", "La dictée a besoin d'un composeur.", "warning")
           return
         }
@@ -368,7 +464,7 @@ const definition = Plugin.define({
       } catch (error) {
         toast("Transcription échouée", String(error?.message ?? error), "error")
       } finally {
-        setPhase("idle")
+        if (!disposed) setPhase("idle")
       }
     }
 
@@ -424,6 +520,7 @@ const definition = Plugin.define({
       const recording = active
       active = null
       if (!recording) return
+      recording.processor.onaudioprocess = null
       try {
         recording.processor.disconnect()
       } catch {}

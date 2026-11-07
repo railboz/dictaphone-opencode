@@ -56,6 +56,9 @@ l'ordinateur.
    %USERPROFILE%\.local\share\dictaphone-opencode
    ```
 
+   Pour mettre à jour une installation existante, ferme d'abord OpenCode
+   Desktop : Windows verrouille `whisper-server.exe` pendant son utilisation.
+
 3. Déclare le plugin dans `C:\Users\<toi>\.config\opencode\opencode.json` :
 
    ```jsonc
@@ -103,8 +106,10 @@ Toutes les options sont facultatives.
 | `vadSilenceMs` | `1500` | Durée de silence avant l'arrêt automatique, en millisecondes. |
 | `vadMaxMs` | `120000` | Durée maximale d'un enregistrement, en millisecondes. |
 | `vadThreshold` | `0.012` | Seuil de détection de la voix. À augmenter dans un environnement bruyant. |
+| `vadMinSpeechMs` | `250` | Durée cumulée de parole requise avant que l'arrêt au silence puisse se déclencher, en millisecondes. |
 | `proxyPort` | `8897` | Port du proxy local. |
 | `sttPort` | `8891` | Port de whisper-server. |
+| `threads` | `8` | Nombre de threads CPU passés à whisper-server. |
 | `root` | `%USERPROFILE%\.local\share\dictaphone-opencode` | Dossier d'exécution contenant `bin/` et `models/`. |
 | `whisperServer` | `<root>/bin/whisper-server.exe` | Chemin personnalisé de whisper-server. |
 | `whisperModel` | `<root>/models/ggml-large-v3-turbo-q5_0.bin` | Chemin personnalisé du modèle. |
@@ -129,8 +134,8 @@ périphérique, insensible à la casse. Mets `""` pour utiliser le micro par dé
 de Windows. Autorise l'accès au microphone dans Paramètres Windows →
 Confidentialité et sécurité → Microphone.
 
-**`Ctrl+Shift+Espace` ne fait rien.** Un autre outil possède peut-être ce
-raccourci. Whisperlane utilise le même ; désactive-le ou modifie le `bind` dans
+**`Ctrl+Shift+Espace` ne fait rien.** Une autre application ou un autre plugin
+possède peut-être ce raccourci. Désactive-le ou modifie le `bind` dans
 `gui-experimental.cjs`.
 
 **HTTP 503 / « whisper n'est pas prêt ».** whisper-server n'a pas démarré.
@@ -149,8 +154,8 @@ les dictées suivantes sont beaucoup plus rapides.
 
 ## Confidentialité
 
-- L'audio est écrit dans un fichier WAV temporaire et envoyé uniquement à
-  `127.0.0.1:8891`.
+- L'audio est encodé en WAV en mémoire et envoyé uniquement au proxy local
+  `127.0.0.1:8897`, qui le transmet à whisper-server sur `127.0.0.1:8891`.
 - Aucun audio, aucune transcription et aucune télémétrie ne partent vers un
   serveur distant.
 - Le script d'installation télécharge whisper.cpp depuis GitHub et le modèle

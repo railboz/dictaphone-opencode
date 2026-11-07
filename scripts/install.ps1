@@ -35,6 +35,12 @@ param(
 $ErrorActionPreference = "Stop"
 [Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12
 
+# Windows locks whisper-server.exe while it runs; updating the files under it
+# would fail halfway through.
+if (Get-Process -Name "whisper-server" -ErrorAction SilentlyContinue) {
+    throw "whisper-server.exe is running. Quit OpenCode Desktop (or disable the Dictaphone OpenCode plugin), then run the installer again."
+}
+
 $binDir = Join-Path $Root "bin"
 $modelsDir = Join-Path $Root "models"
 New-Item -ItemType Directory -Force -Path $binDir, $modelsDir | Out-Null
@@ -69,18 +75,27 @@ Copy-Item (Join-Path $releaseDir "*") $binDir -Recurse -Force
 Write-Host "whisper.cpp installed in $binDir" -ForegroundColor Green
 
 $modelPath = Join-Path $modelsDir $Model
-$needModel = $Force -or -not (Test-Path $modelPath) -or ((Get-Item $modelPath).Length -lt 100MB)
+# 1 MB only guards against empty or truncated files; valid models can be small
+# (ggml-tiny is about 75 MB).
+$needModel = $Force -or -not (Test-Path $modelPath) -or ((Get-Item $modelPath).Length -lt 1MB)
 if ($needModel) {
     $modelUrl = "https://huggingface.co/ggerganov/whisper.cpp/resolve/main/$Model"
+    $partial = "$modelPath.part"
     Write-Host "Downloading model $Model..." -ForegroundColor Cyan
-    if (Get-Command curl.exe -ErrorAction SilentlyContinue) {
-        & curl.exe -L --fail --retry 3 --connect-timeout 30 -o $modelPath $modelUrl
-        if ($LASTEXITCODE -ne 0) { throw "Download failed: $modelUrl" }
-    } else {
-        Invoke-WebRequest -Uri $modelUrl -OutFile $modelPath -UseBasicParsing
+    if (Test-Path $partial) { Remove-Item $partial -Force -ErrorAction SilentlyContinue }
+    try {
+        if (Get-Command curl.exe -ErrorAction SilentlyContinue) {
+            & curl.exe -L --fail --retry 3 --connect-timeout 30 -o $partial $modelUrl
+            if ($LASTEXITCODE -ne 0) { throw "Download failed: $modelUrl" }
+        } else {
+            Invoke-WebRequest -Uri $modelUrl -OutFile $partial -UseBasicParsing
+        }
+        Move-Item $partial $modelPath -Force
+    } finally {
+        Remove-Item $partial -Force -ErrorAction SilentlyContinue
     }
 }
-if (-not (Test-Path $modelPath) -or (Get-Item $modelPath).Length -lt 100MB) {
+if (-not (Test-Path $modelPath) -or (Get-Item $modelPath).Length -lt 1MB) {
     throw "The model download did not complete: $modelPath"
 }
 Write-Host "Model installed in $modelPath" -ForegroundColor Green

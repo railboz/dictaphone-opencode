@@ -2,6 +2,11 @@
 bin/
 models/
 voice/
+*.bin
+*.exe
+*.dll
+*.zip
+*.wav
 
 # Dependencies and local files
 node_modules/

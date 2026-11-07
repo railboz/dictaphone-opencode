@@ -58,6 +58,9 @@ inserts the text into the composer. Audio never leaves your computer.
    %USERPROFILE%\.local\share\dictaphone-opencode
    ```
 
+   When upgrading an existing install, quit OpenCode Desktop first: Windows
+   locks `whisper-server.exe` while the plugin is using it.
+
 3. Register the plugin in `C:\Users\<you>\.config\opencode\opencode.json`:
 
    ```jsonc
@@ -102,8 +105,10 @@ All options are optional.
 | `vadSilenceMs` | `1500` | Silence duration before auto-stop, in milliseconds. |
 | `vadMaxMs` | `120000` | Maximum recording duration, in milliseconds. |
 | `vadThreshold` | `0.012` | Voice activity threshold. Increase in a noisy room. |
+| `vadMinSpeechMs` | `250` | Cumulative speech required before silence auto-stop can trigger, in milliseconds. |
 | `proxyPort` | `8897` | Local proxy port. |
 | `sttPort` | `8891` | whisper-server port. |
+| `threads` | `8` | CPU threads passed to whisper-server. |
 | `root` | `%USERPROFILE%\.local\share\dictaphone-opencode` | Runtime directory containing `bin/` and `models/`. |
 | `whisperServer` | `<root>/bin/whisper-server.exe` | Custom whisper-server path. |
 | `whisperModel` | `<root>/models/ggml-large-v3-turbo-q5_0.bin` | Custom model path. |
@@ -127,9 +132,8 @@ warm-up absorbs that cost.
 the device name. Set it to `""` to use the Windows default input device. Allow
 microphone access in Windows Settings → Privacy & security → Microphone.
 
-**`Ctrl+Shift+Espace` does nothing.** Another tool may own the shortcut.
-Whisperlane uses the same one; disable it or change the `bind` in
-`gui-experimental.cjs`.
+**`Ctrl+Shift+Espace` does nothing.** Another app or plugin may own the
+shortcut. Disable it or change the `bind` in `gui-experimental.cjs`.
 
 **HTTP 503 / "whisper n'est pas prêt".** whisper-server did not start. Check
 that `bin/whisper-server.exe` and `models/ggml-large-v3-turbo-q5_0.bin` exist,
@@ -146,8 +150,8 @@ your NVIDIA driver. The CPU build works without a GPU but is slower.
 
 ## Privacy
 
-- Audio is written to a temporary WAV file and sent only to
-  `127.0.0.1:8891`.
+- Audio is encoded to WAV in memory and sent only to the local proxy at
+  `127.0.0.1:8897`, which forwards it to whisper-server on `127.0.0.1:8891`.
 - No audio, transcript or telemetry is sent to a remote server.
 - The install script downloads whisper.cpp from GitHub and the model from
   Hugging Face. Runtime transcription is offline.

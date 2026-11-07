@@ -18,6 +18,9 @@ const LOG_DIR = path.join(os.homedir(), ".local", "state", "dictaphone-opencode"
 const LOG_FILE = path.join(LOG_DIR, "debug.log")
 const SERVICES_KEY = Symbol.for("dictaphone-opencode.services")
 
+const MAX_UPLOAD_BYTES = 25 * 1024 * 1024
+const TRANSCRIBE_TIMEOUT_MS = 300_000
+
 function log(scope, message) {
   try {
     fs.mkdirSync(LOG_DIR, { recursive: true })
@@ -36,7 +39,13 @@ function services() {
     whisperPort: null,
     whisperReady: false,
     whisperStartedAt: null,
+    whisperStarting: null,
   })
+}
+
+function portOf(value, fallback) {
+  const port = Number(value)
+  return Number.isInteger(port) && port > 0 && port <= 65535 ? port : fallback
 }
 
 async function isUp(url, timeout = 1200) {
@@ -108,17 +117,43 @@ async function handleProxy(req, res) {
     }
 
     if (req.method === "POST" && req.url === "/transcribe") {
-      if (!state.whisperPort || !(await waitFor(`http://127.0.0.1:${state.whisperPort}/`, 15_000))) {
+      // A managed whisper-server may still be loading its model; give it the
+      // same budget as startup. Without a managed process, fail faster.
+      const waitMs = state.whisper ? 60_000 : 15_000
+      if (!state.whisperPort || !(await waitFor(`http://127.0.0.1:${state.whisperPort}/`, waitMs))) {
         json(res, 503, { error: "whisper n'est pas prêt" })
         return
       }
+
+      const declared = Number(req.headers["content-length"] ?? 0)
+      if (Number.isFinite(declared) && declared > MAX_UPLOAD_BYTES) {
+        json(res, 413, { error: "audio trop volumineux" })
+        return
+      }
+
       const chunks = []
-      for await (const chunk of req) chunks.push(chunk)
+      let total = 0
+      let oversized = false
+      for await (const chunk of req) {
+        total += chunk.length
+        if (total > MAX_UPLOAD_BYTES) {
+          oversized = true
+          chunks.length = 0
+          continue
+        }
+        chunks.push(chunk)
+      }
+      if (oversized) {
+        json(res, 413, { error: "audio trop volumineux" })
+        return
+      }
+
       const body = Buffer.concat(chunks)
       const upstream = await fetch(`http://127.0.0.1:${state.whisperPort}/inference`, {
         method: "POST",
         headers: { "Content-Type": req.headers["content-type"] ?? "application/octet-stream" },
         body,
+        signal: AbortSignal.timeout(TRANSCRIBE_TIMEOUT_MS),
       })
       const text = await upstream.text()
       res.writeHead(
@@ -132,7 +167,11 @@ async function handleProxy(req, res) {
     json(res, 404, { error: "not found" })
   } catch (error) {
     log("proxy", `error: ${error.message}`)
-    if (!res.headersSent) json(res, 502, { error: error.message })
+    const message =
+      error.name === "TimeoutError" || error.name === "AbortError"
+        ? "whisper a mis trop de temps à répondre"
+        : error.message
+    if (!res.headersSent) json(res, 502, { error: message })
     else {
       try {
         res.end()
@@ -169,18 +208,31 @@ function silentWav(seconds = 0.5) {
   return buffer
 }
 
-async function warmupWhisper(port) {
+async function warmupWhisper(port, language) {
   if (typeof FormData === "undefined" || typeof Blob === "undefined") return
   const form = new FormData()
   form.append("file", new Blob([silentWav(0.5)], { type: "audio/wav" }), "warmup.wav")
-  form.append("language", "fr")
+  form.append("language", language)
   form.append("response_format", "json")
   form.append("temperature", "0")
   await fetch(`http://127.0.0.1:${port}/inference`, { method: "POST", body: form })
 }
 
 async function startWhisper(state, options, root) {
-  const port = Number(options.sttPort ?? 8891)
+  // Hot reload can overlap two setups. Serialize them so whisper-server is
+  // never spawned twice on the same port.
+  while (state.whisperStarting) {
+    await state.whisperStarting.catch(() => {})
+  }
+  state.whisperStarting = startWhisperOnce(state, options, root).finally(() => {
+    state.whisperStarting = null
+  })
+  await state.whisperStarting
+}
+
+async function startWhisperOnce(state, options, root) {
+  const port = portOf(options.sttPort, 8891)
+  const language = String(options.language ?? "fr").trim() || "fr"
   const bin = path.resolve(options.whisperServer ?? path.join(root, "bin", "whisper-server.exe"))
   const model = path.resolve(
     options.whisperModel ?? path.join(root, "models", "ggml-large-v3-turbo-q5_0.bin"),
@@ -241,7 +293,14 @@ async function startWhisper(state, options, root) {
   state.whisper = child
   state.whisperStartedAt = Date.now()
   child.stderr?.on("data", (chunk) => log("whisper", chunk.toString().trim()))
-  child.on("error", (error) => log("whisper", `spawn error: ${error.message}`))
+  child.on("error", (error) => {
+    log("whisper", `spawn error: ${error.message}`)
+    if (state.whisper === child) {
+      state.whisper = null
+      state.whisperStartedAt = null
+      if (state.whisperPort === port) state.whisperReady = false
+    }
+  })
   child.on("exit", (code) => {
     log("whisper", `exited code=${code}`)
     if (state.whisper === child) {
@@ -257,7 +316,7 @@ async function startWhisper(state, options, root) {
     state.whisperReady = ready
     log("whisper", `ready=${ready}`)
     if (ready) {
-      void warmupWhisper(port)
+      void warmupWhisper(port, language)
         .then(() => log("whisper", "warmup done"))
         .catch((error) => log("whisper", `warmup failed: ${error.message}`))
     }
@@ -271,13 +330,14 @@ export default Plugin.define({
     const root = path.resolve(options.root ?? DEFAULT_ROOT)
     const state = services()
     state.refs++
+    let stopped = false
 
     log("plugin", `starting refs=${state.refs} root=${root}`)
 
     try {
       await startWhisper(state, options, root)
 
-      const port = Number(options.proxyPort ?? 8897)
+      const port = portOf(options.proxyPort, 8897)
       if (state.proxy && state.proxyPort === port && state.proxy.listening) {
         // Hot reload: keep the socket and swap in the current request handler.
         state.proxy.removeAllListeners("request")
@@ -308,6 +368,8 @@ export default Plugin.define({
     }
 
     return () => {
+      if (stopped) return
+      stopped = true
       state.refs--
       log("plugin", `stopping refs=${state.refs}`)
       if (state.refs > 0) return
@@ -322,6 +384,7 @@ export default Plugin.define({
       state.whisper = null
       state.whisperReady = false
       state.whisperStartedAt = null
+      state.whisperStarting = null
       delete globalThis[SERVICES_KEY]
     }
   },

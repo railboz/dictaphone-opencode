@@ -1,6 +1,6 @@
 {
   "name": "dictaphone-opencode",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "description": "Local, offline Whisper dictation plugin for OpenCode Desktop.",
   "private": true,
   "type": "module",
