@@ -1,0 +1,43 @@
+{
+  "name": "opencode-whisper",
+  "version": "0.1.0",
+  "description": "Dictée vocale Whisper avec icône microphone pour OpenCode Desktop",
+  "type": "module",
+  "license": "MIT",
+  "author": "Logan",
+  "keywords": [
+    "opencode",
+    "opencode-plugin",
+    "whisper",
+    "speech-to-text",
+    "dictation",
+    "voice"
+  ],
+  "exports": {
+    ".": "./src/index.ts",
+    "./rpc": "./src/rpc.ts",
+    "./gui-experimental": "./dist/gui-experimental.cjs"
+  },
+  "files": [
+    "src",
+    "dist",
+    "local-server",
+    "README.md",
+    "LICENSE"
+  ],
+  "scripts": {
+    "build": "vite build",
+    "dev": "vite build --watch",
+    "typecheck": "tsc --noEmit",
+    "test": "npm run typecheck && npm run build"
+  },
+  "devDependencies": {
+    "@opencode/plugin": "2.2.7",
+    "@types/node": "^24.0.0",
+    "effect": "4.1.0",
+    "solid-js": "^1.9.19",
+    "typescript": "^5.9.0",
+    "vite": "^7.0.0",
+    "vite-plugin-solid": "^2.11.16"
+  }
+}
