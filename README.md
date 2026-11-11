@@ -157,8 +157,9 @@ chargés :
 
 En français, le moteur ajoute automatiquement une consigne de style
 (« ponctuation, majuscules, accents ») au vocabulaire. Sur 30 phrases
-françaises de test, elle améliore la capitalisation (90 % contre 83 %) et la
-ponctuation finale (80 % contre 77 %), sans ralentir la transcription.
+françaises de test, elle fait légèrement baisser le WER (3,72 % contre 3,95 %)
+et améliore la capitalisation (90 % contre 83 %) et la ponctuation finale
+(80 % contre 77 %), sans ralentir la transcription.
 
 ### Mémoire
 
