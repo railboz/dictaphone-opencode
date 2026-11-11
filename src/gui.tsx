@@ -1,13 +1,11 @@
-import { For, Show, createSignal } from "solid-js"
+import { Show, createEffect, createSignal } from "solid-js"
 import {
   Command,
   ComposerPill,
   Plugin,
   SettingsPage,
-  Slot,
   Store,
   type ComposerPillView,
-  type SlotMap,
 } from "@opencode/plugin/gui"
 import { Voice, type TranscribeOutput } from "./rpc"
 import { startRecording, toBase64, toWav, type Recording } from "./audio.js"
@@ -29,32 +27,11 @@ const definition = Plugin.define({
   i18n: { en, fr },
 })
 
-function MicrophoneIcon() {
-  return (
-    <svg
-      width="16"
-      height="16"
-      viewBox="0 0 24 24"
-      fill="none"
-      stroke="currentColor"
-      stroke-width="1.8"
-      stroke-linecap="round"
-      stroke-linejoin="round"
-      aria-hidden="true"
-    >
-      <rect x="9" y="2" width="6" height="12" rx="3" />
-      <path d="M5 10v1a7 7 0 0 0 14 0v-1" />
-      <path d="M12 18v3" />
-      <path d="M8 21h8" />
-    </svg>
-  )
-}
+const MIC_SVG = `<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><rect x="9" y="2" width="6" height="12" rx="3"/><path d="M5 10v1a7 7 0 0 0 14 0v-1"/><path d="M12 18v3"/><path d="M8 21h8"/></svg>`
 
 const setup: Plugin.Setup<typeof definition> = (ctx) => {
   const [phase, setPhase] = createSignal<Phase>("idle")
-  const [level, setLevel] = createSignal(0)
   const [seconds, setSeconds] = createSignal(0)
-  const [hover, setHover] = createSignal(false)
 
   let recording: Recording | undefined
   let timer: ReturnType<typeof setInterval> | undefined
@@ -101,14 +78,12 @@ const setup: Plugin.Setup<typeof definition> = (ctx) => {
       recording = next
       startedAt = Date.now()
       setSeconds(0)
-      setLevel(0)
       setPhase("recording")
 
       const limit = Math.max(5, Number(settings().maxSeconds) || 60)
       timer = setInterval(() => {
         const elapsed = (Date.now() - startedAt) / 1000
         setSeconds(Math.floor(elapsed))
-        setLevel(next.level())
         if (elapsed >= limit) void stop()
       }, 200)
     } catch (error) {
@@ -123,7 +98,6 @@ const setup: Plugin.Setup<typeof definition> = (ctx) => {
 
     recording = undefined
     clearTimer()
-    setLevel(0)
     setPhase("transcribing")
 
     const session = ctx.sessions.current()
@@ -193,81 +167,138 @@ const setup: Plugin.Setup<typeof definition> = (ctx) => {
     else if (phase() === "idle") void start()
   }
 
-  const MicButton = (props: { input: SlotMap["session.header"] }) => {
-    const active = () => phase() === "recording"
-    const busy = () => phase() === "transcribing"
-    const compact = () => props.input.compact
-    const label = () => (active() ? ctx.t("button.stop") : ctx.t("button.dictate"))
-    const tooltip = () =>
-      busy()
-        ? ctx.t("pill.transcribing.title")
-        : active()
-          ? ctx.t("pill.recording.title")
-          : ctx.t("command.dictate.description")
+  const button = document.createElement("button")
+  button.type = "button"
+  button.dataset.opencodeWhisper = "dictate"
+  button.innerHTML = MIC_SVG
+  button.style.cssText =
+    "display:inline-flex;align-items:center;justify-content:center;padding:0;margin:0 4px 0 2px;border:0;border-radius:8px;background:transparent;color:inherit;cursor:pointer;flex-shrink:0;line-height:0;box-sizing:border-box;transition:background-color 120ms ease,color 120ms ease,opacity 120ms ease,box-shadow 120ms ease"
 
-    return (
-      <ctx.ui.Tooltip value={tooltip()} keys={ctx.keybinds.keybind(`${ctx.id}.dictate`)} placement="bottom">
-        <button
-          type="button"
-          aria-label={label()}
-          aria-pressed={active()}
-          disabled={busy()}
-          onClick={() => void toggle()}
-          onMouseEnter={() => setHover(true)}
-          onMouseLeave={() => setHover(false)}
-          style={{
-            display: "inline-flex",
-            "align-items": "center",
-            "justify-content": "center",
-            gap: "6px",
-            height: "26px",
-            width: compact() ? "26px" : undefined,
-            padding: compact() ? "0" : "0 9px",
-            border: "1px solid var(--border-color, color-mix(in srgb, currentColor 18%, transparent))",
-            "border-radius": "6px",
-            background: active()
-              ? "color-mix(in srgb, #ef4444 14%, transparent)"
-              : hover()
-                ? "color-mix(in srgb, currentColor 8%, transparent)"
-                : "transparent",
-            color: active() ? "#ef4444" : "inherit",
-            "border-color": active() ? "color-mix(in srgb, #ef4444 45%, transparent)" : undefined,
-            cursor: busy() ? "default" : "pointer",
-            font: "inherit",
-            "font-size": "12px",
-            "line-height": "1",
-            opacity: busy() ? "0.75" : "1",
-            "flex-shrink": "0",
-            transition: "background-color 120ms ease, color 120ms ease, border-color 120ms ease",
-          }}
-        >
-          <Show when={!busy()} fallback={<ctx.ui.Loader size="small" />}>
-            <MicrophoneIcon />
-          </Show>
-          <Show when={!compact()}>
-            <span>{label()}</span>
-          </Show>
-          <Show when={active() && !compact()}>
-            <span style={{ display: "inline-flex", "align-items": "center", gap: "1px", height: "12px" }}>
-              <For each={[0.45, 0.75, 1, 0.6]}>
-                {(factor) => (
-                  <span
-                    style={{
-                      width: "2px",
-                      height: `${Math.max(2, level() * 12 * factor)}px`,
-                      background: "currentColor",
-                      "border-radius": "1px",
-                      transition: "height 80ms linear",
-                    }}
-                  />
-                )}
-              </For>
-            </span>
-          </Show>
-        </button>
-      </ctx.ui.Tooltip>
-    )
+  let hovered = false
+  let frame = 0
+  let bootFrame = 0
+  let host: HTMLElement | undefined
+  let submit: HTMLElement | undefined
+  let anchor: HTMLElement | undefined
+  let observer: MutationObserver | undefined
+
+  const apply = () => {
+    const state = phase()
+    const active = state === "recording"
+    const busy = state === "transcribing"
+    const keys = ctx.keybinds.keybind(`${ctx.id}.dictate`).join("+")
+    const label = active ? ctx.t("button.stop") : busy ? ctx.t("pill.transcribing") : ctx.t("button.dictate")
+    button.disabled = busy
+    button.setAttribute("aria-label", label)
+    button.setAttribute("aria-pressed", String(active))
+    button.title = keys ? `${label} (${keys})` : label
+    button.style.color = active ? "#ef4444" : "inherit"
+    button.style.background = active
+      ? "color-mix(in srgb, #ef4444 12%, transparent)"
+      : hovered
+        ? "color-mix(in srgb, currentColor 10%, transparent)"
+        : "transparent"
+    button.style.opacity = busy ? "0.55" : "1"
+    button.style.cursor = busy ? "default" : "pointer"
+    button.style.boxShadow = active ? "0 0 0 3px color-mix(in srgb, #ef4444 14%, transparent)" : "none"
   }
+
+  const ensure = () => {
+    frame = 0
+    if (!ctx.sessions.current() || !ctx.screen.current()?.composer) {
+      button.remove()
+      host = undefined
+      submit = undefined
+      anchor = undefined
+      return
+    }
+    if (
+      host?.isConnected &&
+      submit?.isConnected &&
+      anchor?.isConnected &&
+      button.parentElement === host &&
+      button.nextElementSibling === anchor
+    ) {
+      return
+    }
+
+    let best: { host: HTMLElement; submit: HTMLElement; bottom: number } | undefined
+    for (const candidate of document.querySelectorAll<HTMLElement>('[data-slot="composer-actions"]')) {
+      const submitButton = candidate.querySelector<HTMLElement>('[data-action="composer-submit"]')
+      if (!submitButton || candidate.getClientRects().length === 0) continue
+      if (getComputedStyle(candidate).visibility === "hidden") continue
+      const rect = candidate.getBoundingClientRect()
+      if (rect.width <= 0 || rect.height <= 0) continue
+      if (!best || rect.bottom > best.bottom) best = { host: candidate, submit: submitButton, bottom: rect.bottom }
+    }
+
+    if (!best) {
+      button.remove()
+      host = undefined
+      submit = undefined
+      anchor = undefined
+      return
+    }
+
+    host = best.host
+    submit = best.submit
+    let top: HTMLElement = submit
+    while (top.parentElement && top.parentElement !== host) top = top.parentElement
+    if (top.parentElement !== host) {
+      button.remove()
+      host = undefined
+      submit = undefined
+      anchor = undefined
+      return
+    }
+    anchor = top
+    const size = Math.round(submit.getBoundingClientRect().height) || 28
+    button.style.width = `${size}px`
+    button.style.height = `${size}px`
+    button.style.borderRadius = getComputedStyle(submit).borderRadius || "8px"
+    if (button.parentElement !== host || button.nextElementSibling !== anchor) {
+      host.insertBefore(button, anchor)
+    }
+    apply()
+  }
+
+  const schedule = () => {
+    if (frame) return
+    frame = requestAnimationFrame(ensure)
+  }
+
+  const boot = () => {
+    bootFrame = 0
+    if (!document.body) {
+      bootFrame = requestAnimationFrame(boot)
+      return
+    }
+    observer = new MutationObserver(schedule)
+    observer.observe(document.body, { childList: true, subtree: true })
+    ensure()
+  }
+  bootFrame = requestAnimationFrame(boot)
+
+  button.addEventListener("click", () => void toggle())
+  button.addEventListener("mouseenter", () => {
+    hovered = true
+    apply()
+  })
+  button.addEventListener("mouseleave", () => {
+    hovered = false
+    apply()
+  })
+
+  createEffect(() => {
+    phase()
+    apply()
+  })
+
+  createEffect(() => {
+    ctx.sessions.current()
+    ctx.screen.current()
+    ensure()
+  })
 
   const Settings = () => {
     const value = () => settings()
@@ -456,16 +487,14 @@ const setup: Plugin.Setup<typeof definition> = (ctx) => {
     },
   }))
 
-  ctx.add(Slot, {
-    at: "session.header",
-    order: 30,
-    render: (input) => <MicButton input={input} />,
-  })
-
   return () => {
     clearTimer()
     recording?.cancel()
     recording = undefined
+    observer?.disconnect()
+    if (frame) cancelAnimationFrame(frame)
+    if (bootFrame) cancelAnimationFrame(bootFrame)
+    button.remove()
   }
 }
 

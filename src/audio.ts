@@ -1,7 +1,5 @@
 export interface Recording {
   readonly stream: MediaStream
-  /** Current input level, normalized between 0 and 1. */
-  level(): number
   stop(): Promise<Blob>
   cancel(): void
 }
@@ -33,30 +31,6 @@ export async function startRecording(): Promise<Recording> {
     },
   })
 
-  const AudioContextClass = window.AudioContext
-  const context = new AudioContextClass()
-  const source = context.createMediaStreamSource(stream)
-  const analyser = context.createAnalyser()
-  analyser.fftSize = 512
-  analyser.smoothingTimeConstant = 0.75
-  source.connect(analyser)
-
-  const samples = new Uint8Array(analyser.fftSize)
-  let measured = 0
-  let frame = 0
-  const tick = () => {
-    analyser.getByteTimeDomainData(samples)
-    let sum = 0
-    for (const sample of samples) {
-      const value = (sample - 128) / 128
-      sum += value * value
-    }
-    measured = Math.min(1, Math.sqrt(sum / samples.length) * 4)
-    frame = requestAnimationFrame(tick)
-  }
-  frame = requestAnimationFrame(tick)
-  void context.resume().catch(() => undefined)
-
   const mimeType = pickMime()
   const recorder = mimeType
     ? new MediaRecorder(stream, { mimeType, audioBitsPerSecond: 128_000 })
@@ -71,9 +45,7 @@ export async function startRecording(): Promise<Recording> {
   let stopReject: ((error: unknown) => void) | undefined
 
   const cleanup = () => {
-    cancelAnimationFrame(frame)
     for (const track of stream.getTracks()) track.stop()
-    void context.close().catch(() => undefined)
   }
 
   recorder.onerror = (event) => {
@@ -90,7 +62,6 @@ export async function startRecording(): Promise<Recording> {
 
   return {
     stream,
-    level: () => measured,
     stop: () => {
       if (stopped) return stopped
       stopped = new Promise<Blob>((resolve, reject) => {

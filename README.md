@@ -1,18 +1,19 @@
 # opencode-whisper
 
-Dictée vocale Whisper pour **OpenCode Desktop**, avec un vrai bouton
-microphone dans l'en-tête de session.
+Dictée vocale Whisper pour **OpenCode Desktop**, avec une vraie icône
+microphone juste à côté du bouton d'envoi.
 
-![Bouton microphone dans OpenCode](docs/mic-button.png)
+![Icône microphone dans OpenCode](docs/mic-button.png)
 
 ![Transcription insérée dans le prompt](docs/dictation.png)
 
-*Le bouton « Dicter » dans l'en-tête, et le texte Whisper inséré dans le
+*L'icône micro à côté du bouton d'envoi, et le texte Whisper inséré dans le
 prompt sans être envoyé.*
 
 ## Ce que fait le plugin
 
-- Bouton microphone dessiné en SVG dans l'en-tête de session.
+- Icône microphone dessinée en SVG, à côté du bouton d'envoi (icône seule,
+  sans libellé).
 - Raccourci `Ctrl+Maj+M` (ou `Cmd+Maj+M` sur macOS) et commande `/voice`.
 - Pastille d'état au-dessus du prompt : écoute, durée, transcription.
 - Le texte transcrit est **inséré dans le prompt**, jamais envoyé tout seul.
@@ -30,9 +31,9 @@ Micro → MediaRecorder → WAV 16 kHz mono → RPC OpenCode → Whisper
                          prompt OpenCode ← texte ←────┘
 ```
 
-Le plugin a deux parties : une partie GUI (bouton, capture micro, insertion
-dans le prompt) et une partie serveur (appel HTTP vers Whisper). L'audio ne
-transite qu'entre OpenCode et le service configuré.
+Le plugin a deux parties : une partie GUI (icône micro, capture audio,
+insertion dans le prompt) et une partie serveur (appel HTTP vers Whisper).
+L'audio ne transite qu'entre OpenCode et le service configuré.
 
 ## Performances mesurées
 
@@ -57,7 +58,7 @@ phrase. `small` est le compromis par défaut.
 - Facultatif : une clé API OpenAI si vous préférez le mode cloud.
 
 > Le serveur local fourni utilise systemd (Linux). Sur macOS ou Windows,
-> utilisez OpenAI ou un endpoint compatible OpenAI : le bouton microphone et
+> utilisez OpenAI ou un endpoint compatible OpenAI : l'icône microphone et
 > l'insertion dans le prompt fonctionnent de la même façon.
 
 ## Installation clé en main
@@ -75,7 +76,7 @@ Le script :
    `~/.local/share/opencode-whisper` et le service systemd utilisateur ;
 3. ajoute le dossier du plugin à `~/.config/opencode/opencode.json`.
 
-Redémarrez OpenCode Desktop. Le bouton **Dicter** apparaît dans l'en-tête
+Redémarrez OpenCode Desktop. L'icône micro apparaît à côté du bouton d'envoi
 d'une session.
 
 Pour utiliser uniquement OpenAI (sans serveur local) :
@@ -89,8 +90,8 @@ puis renseignez la clé dans **Settings › Whisper dictation**.
 ## Utilisation
 
 1. Ouvrez une session.
-2. Cliquez sur **Dicter**, appuyez sur `Ctrl+Maj+M`, ou tapez `/voice`.
-3. Parlez : le bouton devient rouge et affiche le niveau du micro.
+2. Cliquez sur l'icône **micro**, appuyez sur `Ctrl+Maj+M`, ou tapez `/voice`.
+3. Parlez : l'icône devient rouge.
 4. Cliquez à nouveau pour arrêter. Whisper transcrit et insère le texte.
 5. Relisez, corrigez si besoin, puis envoyez.
 
@@ -149,7 +150,7 @@ avec `file`, `model`, `language` et `response_format=json`.
 
 ## Dépannage
 
-- **Le bouton n'apparaît pas** : vérifiez la version d'OpenCode Desktop
+- **L'icône n'apparaît pas** : vérifiez la version d'OpenCode Desktop
   (≥ 2.2.7), la présence du plugin dans `opencode.json`, puis
   `~/.local/share/opencode/log/opencode.log`.
 - **Microphone inaccessible** : autorisez le micro dans les réglages du
