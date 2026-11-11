@@ -23,7 +23,7 @@ prompt sans être envoyé.*
 - Audio converti en WAV 16 kHz mono avant l'envoi.
 - Transcription locale rapide : ~0,5 s sur GPU, quelques secondes sur CPU.
 - Aucun serveur local : le moteur est lancé à la demande par le plugin et
-  s'arrête après dix minutes sans dictée.
+  s'arrête après le délai choisi (1 minute par défaut) pour libérer sa mémoire.
 
 ## Comment ça marche
 
@@ -121,6 +121,7 @@ L'enregistrement s'arrête automatiquement à la limite.
 |---|---|
 | Service | `Moteur intégré (sans serveur)`, `OpenAI`, ou `Compatible OpenAI` |
 | Modèle local | `auto`, `large-v3-turbo`, `large-v3` ou `small` |
+| Libérer la mémoire après | Immédiatement, 30 s, 1 min, 5 min ou 10 min |
 | URL du service | Endpoint HTTP pour OpenAI et les services compatibles |
 | Modèle | Nom du modèle pour les services compatibles OpenAI |
 | Langue | `fr`, `en`, … ou `auto` |
@@ -133,7 +134,10 @@ L'enregistrement s'arrête automatiquement à la limite.
 Le modèle par défaut dépend du matériel : `large-v3-turbo` (~1,6 Go) si un GPU
 NVIDIA est détecté, sinon `small` (~500 Mo). Le moteur choisit automatiquement
 CUDA/float16 et retombe sur CPU/int8 en cas de problème. Il est lancé au
-premier clic sur le micro, reste chaud pendant dix minutes, puis s'arrête.
+premier clic sur le micro, reste chaud pendant le délai choisi (1 minute par
+défaut), puis s'arrête. Choisissez **Immédiatement après la dictée** pour
+libérer la mémoire dès la fin de chaque transcription : le moteur suivant se
+recharge pendant que vous parlez.
 
 ```bash
 ./local-server/install.sh large-v3    # précision maximale sur GPU
@@ -150,6 +154,23 @@ chargés :
 ~/.local/share/dictaphone-opencode/venv/bin/python \
   ~/.local/share/dictaphone-opencode/server.py --prepare
 ```
+
+### Mémoire
+
+Mesures sur la RTX 2080 Ti, moteur chargé :
+
+| Configuration | RAM système | VRAM |
+|---|---:|---:|
+| `large-v3-turbo` float16 | ~0,5 Go | ~2,1 Go |
+| `large-v3-turbo` int8_float16 | ~1,3 Go | ~1,15 Go |
+| `small` float16 | ~0,5 Go | ~0,7 Go |
+| `small` int8_float16 | ~0,6 Go | ~0,45 Go |
+
+Le moteur s'arrête après le délai choisi et libère ces deux mémoires. Pour la
+RAM système, le gain principal vient donc de l'arrêt, pas du langage : une
+version Rust mesure ~0,4 Go au lieu de ~0,5 Go, avec la même VRAM.
+`int8_float16` réduit la VRAM mais augmente la RAM système (quantification),
+et `small` réduit les deux au prix de la précision.
 
 ### OpenAI
 

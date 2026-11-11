@@ -9,9 +9,15 @@ import { Voice, type TranscribeInput, type TranscribeOutput } from "./rpc.js"
 
 const TRANSCRIBE_TIMEOUT_MS = 120_000
 const READY_TIMEOUT_MS = 180_000
+const DEFAULT_IDLE_MS = 60_000
+// While waiting for the user to finish speaking, keep the engine loaded for
+// at most ten minutes even when the post-dictation delay is zero.
+const PREPARE_HOLD_MS = 10 * 60_000
 const configuredIdle = Number(process.env.DICTAPHONE_IDLE_MS)
-const IDLE_TIMEOUT_MS =
-  Number.isFinite(configuredIdle) && configuredIdle >= 0 ? configuredIdle : 600_000
+const ENV_IDLE_MS =
+  process.env.DICTAPHONE_IDLE_MS !== undefined && Number.isFinite(configuredIdle) && configuredIdle >= 0
+    ? configuredIdle
+    : undefined
 
 const moduleDirectory = fileURLToPath(new URL(".", import.meta.url))
 const dataDirectories = Array.from(
@@ -87,6 +93,11 @@ function resolveModel(requested: string | undefined): string {
   return installedModel() || "auto"
 }
 
+function idleMilliseconds(seconds: number | undefined): number | undefined {
+  if (typeof seconds !== "number" || !Number.isFinite(seconds) || seconds < 0) return undefined
+  return Math.round(seconds * 1000)
+}
+
 interface PendingRequest {
   resolve: (text: string) => void
   reject: (error: Error) => void
@@ -97,8 +108,9 @@ interface PendingRequest {
  * A local transcription engine started on demand and kept warm for a while.
  *
  * It talks newline-delimited JSON over stdin/stdout: no port, no HTTP server,
- * no systemd unit. The process exits after ten minutes without use and when
- * OpenCode shuts the plugin down.
+ * no systemd unit. The process exits after the configured idle delay, or right
+ * after a dictation when that delay is zero, and when OpenCode shuts the plugin
+ * down.
  */
 class LocalEngine {
   private child: ChildProcessWithoutNullStreams | undefined
@@ -110,16 +122,19 @@ class LocalEngine {
   private stderr = ""
   private sequence = 0
   private model: string | undefined
+  private idleMs = ENV_IDLE_MS ?? DEFAULT_IDLE_MS
   private disposed = false
   private pending = new Map<string, PendingRequest>()
 
-  async prepare(requested: string | undefined): Promise<void> {
+  async prepare(requested: string | undefined, idleSeconds?: number): Promise<void> {
+    this.setIdle(idleSeconds)
     await this.ensure(resolveModel(requested))
-    this.armIdle()
+    this.armHold()
   }
 
   async transcribe(input: TranscribeInput): Promise<string> {
     if (!input.audio) throw new Error("Enregistrement audio vide.")
+    this.setIdle(input.idleSeconds)
     await this.ensure(resolveModel(input.localModel))
     const child = this.child
     if (!child) throw new Error("Le moteur local s'est arrêté.")
@@ -315,12 +330,25 @@ class LocalEngine {
     this.fail(error)
   }
 
-  private armIdle(): void {
+  private setIdle(seconds: number | undefined): void {
+    if (ENV_IDLE_MS !== undefined) return
+    const milliseconds = idleMilliseconds(seconds)
+    if (milliseconds !== undefined) this.idleMs = milliseconds
+  }
+
+  private armHold(): void {
     this.clearIdle()
-    if (IDLE_TIMEOUT_MS <= 0) return
     this.idle = setTimeout(() => {
       this.fail(new Error("Le moteur local a été arrêté après inactivité."))
-    }, IDLE_TIMEOUT_MS)
+    }, PREPARE_HOLD_MS)
+    this.idle.unref?.()
+  }
+
+  private armIdle(): void {
+    this.clearIdle()
+    this.idle = setTimeout(() => {
+      this.fail(new Error("Le moteur local a été arrêté après inactivité."))
+    }, Math.max(0, this.idleMs))
     this.idle.unref?.()
   }
 
@@ -390,10 +418,10 @@ const plugin: Plugin.Plugin = {
 
     await ctx.rpc.register(Voice, {
       prepare: async (input): Promise<{ ok: boolean; error: string }> => {
-        const data = input as { service?: string; localModel?: string }
+        const data = input as { service?: string; localModel?: string; idleSeconds?: number }
         if (data.service !== "local") return { ok: true, error: "" }
         try {
-          await engine.prepare(data.localModel)
+          await engine.prepare(data.localModel, data.idleSeconds)
           return { ok: true, error: "" }
         } catch (error) {
           return { ok: false, error: message(error) }

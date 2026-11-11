@@ -20,6 +20,7 @@ export const Voice = {
         properties: {
           service: { type: "string", enum: ["local", "openai", "custom"] },
           localModel: { type: "string" },
+          idleSeconds: { type: "number" },
         },
         required: ["service"],
         additionalProperties: false,
@@ -45,6 +46,7 @@ export const Voice = {
           endpoint: { type: "string" },
           model: { type: "string" },
           localModel: { type: "string" },
+          idleSeconds: { type: "number" },
           language: { type: "string" },
           prompt: { type: "string" },
           apiKey: { type: "string" },
@@ -84,6 +86,7 @@ export interface TranscribeInput {
   endpoint: string
   model: string
   localModel: string
+  idleSeconds: number
   language: string
   prompt: string
   apiKey: string

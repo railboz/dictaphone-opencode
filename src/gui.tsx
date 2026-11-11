@@ -94,7 +94,11 @@ const setup: Plugin.Setup<typeof definition> = (ctx) => {
         // parallel with the recording, so stopping feels immediate.
         void ctx.client
           .rpc(Voice)
-          .prepare({ service: "local", localModel: current.localModel })
+          .prepare({
+            service: "local",
+            localModel: current.localModel,
+            idleSeconds: current.localIdleSeconds,
+          })
           .catch(() => undefined)
       }
 
@@ -155,6 +159,7 @@ const setup: Plugin.Setup<typeof definition> = (ctx) => {
         endpoint: current.endpoint.trim(),
         model: current.model.trim(),
         localModel: current.localModel,
+        idleSeconds: current.localIdleSeconds,
         language: current.language.trim() || "fr",
         prompt: current.prompt,
         apiKey: current.apiKey,
@@ -451,6 +456,25 @@ const setup: Plugin.Setup<typeof definition> = (ctx) => {
                 ]}
               />
             </ctx.ui.SettingsRow>
+
+            <ctx.ui.SettingsRow
+              id="dictaphone-local-idle"
+              title={ctx.t("settings.localIdle")}
+              description={ctx.t("settings.localIdle.description")}
+            >
+              <ctx.ui.Select
+                label={ctx.t("settings.localIdle")}
+                value={String(value().localIdleSeconds ?? 60)}
+                onChange={(seconds) => update({ localIdleSeconds: Number(seconds) })}
+                options={[
+                  { value: "0", label: ctx.t("settings.localIdle.immediate") },
+                  { value: "30", label: ctx.t("settings.seconds", { count: 30 }) },
+                  { value: "60", label: ctx.t("settings.minutes", { count: 1 }) },
+                  { value: "300", label: ctx.t("settings.minutes", { count: 5 }) },
+                  { value: "600", label: ctx.t("settings.minutes", { count: 10 }) },
+                ]}
+              />
+            </ctx.ui.SettingsRow>
           </Show>
 
           <Show when={value().service !== "local"}>
@@ -565,6 +589,11 @@ const setup: Plugin.Setup<typeof definition> = (ctx) => {
                 id: "dictaphone-local-model",
                 title: ctx.t("settings.localModel"),
                 description: ctx.t("settings.localModel.description"),
+              },
+              {
+                id: "dictaphone-local-idle",
+                title: ctx.t("settings.localIdle"),
+                description: ctx.t("settings.localIdle.description"),
               },
             ]
           : [

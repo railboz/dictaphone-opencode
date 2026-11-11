@@ -7,6 +7,7 @@ export interface DictaphoneSettings {
   endpoint: string
   model: string
   localModel: string
+  localIdleSeconds: number
   language: string
   apiKey: string
   prompt: string
@@ -18,6 +19,7 @@ export const DictaphoneSettingsSchema = Schema.Struct({
   endpoint: Schema.String,
   model: Schema.String,
   localModel: Schema.String,
+  localIdleSeconds: Schema.Number,
   language: Schema.String,
   apiKey: Schema.String,
   prompt: Schema.String,
@@ -29,6 +31,7 @@ export const defaultSettings: DictaphoneSettings = {
   endpoint: "",
   model: "whisper-1",
   localModel: "auto",
+  localIdleSeconds: 60,
   language: "fr",
   apiKey: "",
   prompt: "OpenCode, TypeScript, Rust, Python",
