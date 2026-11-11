@@ -171,7 +171,8 @@ const setup: Plugin.Setup<typeof definition> = (ctx) => {
 
       const existing = composer.text()
       const prefix = existing.length > 0 && !/\s$/.test(existing) ? " " : ""
-      composer.insert(prefix + text)
+      const suffix = /\s$/.test(text) ? "" : " "
+      composer.insert(prefix + text + suffix)
       composer.focus()
 
       ctx.toast.show({

@@ -28,7 +28,7 @@ export const defaultSettings: WhisperSettings = {
   model: "whisper-1",
   language: "fr",
   apiKey: "",
-  prompt: "",
+  prompt: "OpenCode, Whisper, TypeScript, Rust, Python",
   maxSeconds: 60,
 }
 
