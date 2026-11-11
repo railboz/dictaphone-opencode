@@ -11,18 +11,18 @@ import { Voice, type TranscribeOutput } from "./rpc"
 import { startRecording, toBase64, toWav, type Recording } from "./audio.js"
 import { en, fr } from "./i18n.js"
 import {
-  WhisperSettingsSchema,
+  DictaphoneSettingsSchema,
   defaultSettings,
   serviceDefaults,
-  type WhisperService,
-  type WhisperSettings,
+  type DictaphoneService,
+  type DictaphoneSettings,
 } from "./settings.js"
 
 type Phase = "idle" | "recording" | "transcribing"
 
 const definition = Plugin.define({
   stores: {
-    settings: Store.global(WhisperSettingsSchema, defaultSettings),
+    settings: Store.global(DictaphoneSettingsSchema, defaultSettings),
   },
   i18n: { en, fr },
 })
@@ -37,14 +37,14 @@ const setup: Plugin.Setup<typeof definition> = (ctx) => {
   let timer: ReturnType<typeof setInterval> | undefined
   let startedAt = 0
 
-  const settings = (): WhisperSettings => ctx.stores.settings.value as WhisperSettings
-  const update = (patch: Partial<WhisperSettings>) => {
+  const settings = (): DictaphoneSettings => ctx.stores.settings.value as DictaphoneSettings
+  const update = (patch: Partial<DictaphoneSettings>) => {
     ctx.stores.settings.update((draft) => {
       Object.assign(draft, patch)
     })
   }
 
-  const openSettings = () => ctx.layout.settings("whisper")
+  const openSettings = () => ctx.layout.settings("dictaphone")
 
   const fail = (title: string, error: unknown) => {
     const detail = error instanceof Error ? error.message : String(error)
@@ -169,7 +169,7 @@ const setup: Plugin.Setup<typeof definition> = (ctx) => {
 
   const button = document.createElement("button")
   button.type = "button"
-  button.dataset.opencodeWhisper = "dictate"
+  button.dataset.dictaphoneOpencode = "dictate"
   button.innerHTML = MIC_SVG
   button.style.cssText =
     "display:inline-flex;align-items:center;justify-content:center;padding:0;margin:0 4px 0 2px;border:0;border-radius:8px;background:transparent;color:inherit;cursor:pointer;flex-shrink:0;line-height:0;box-sizing:border-box;transition:background-color 120ms ease,color 120ms ease,opacity 120ms ease,box-shadow 120ms ease"
@@ -306,7 +306,7 @@ const setup: Plugin.Setup<typeof definition> = (ctx) => {
       <ctx.ui.SettingsLayout title={ctx.t("settings.title")} description={ctx.t("settings.description")}>
         <ctx.ui.SettingsSection title={ctx.t("settings.section.engine")}>
           <ctx.ui.SettingsRow
-            id="whisper-service"
+            id="dictaphone-service"
             title={ctx.t("settings.service")}
             description={ctx.t("settings.service.description")}
           >
@@ -314,8 +314,8 @@ const setup: Plugin.Setup<typeof definition> = (ctx) => {
               label={ctx.t("settings.service")}
               value={value().service}
               onChange={(service) => {
-                const defaults = serviceDefaults[service as WhisperService]
-                update({ service: service as WhisperService, endpoint: defaults.endpoint, model: defaults.model })
+                const defaults = serviceDefaults[service as DictaphoneService]
+                update({ service: service as DictaphoneService, endpoint: defaults.endpoint, model: defaults.model })
               }}
               options={[
                 { value: "local", label: ctx.t("settings.service.local") },
@@ -326,7 +326,7 @@ const setup: Plugin.Setup<typeof definition> = (ctx) => {
           </ctx.ui.SettingsRow>
 
           <ctx.ui.SettingsRow
-            id="whisper-endpoint"
+            id="dictaphone-endpoint"
             title={ctx.t("settings.endpoint")}
             description={ctx.t("settings.endpoint.description")}
           >
@@ -339,7 +339,7 @@ const setup: Plugin.Setup<typeof definition> = (ctx) => {
           </ctx.ui.SettingsRow>
 
           <ctx.ui.SettingsRow
-            id="whisper-model"
+            id="dictaphone-model"
             title={ctx.t("settings.model")}
             description={ctx.t("settings.model.description")}
           >
@@ -352,7 +352,7 @@ const setup: Plugin.Setup<typeof definition> = (ctx) => {
 
           <Show when={value().service !== "local"}>
             <ctx.ui.SettingsRow
-              id="whisper-api-key"
+              id="dictaphone-api-key"
               title={ctx.t("settings.apiKey")}
               description={ctx.t("settings.apiKey.description")}
             >
@@ -368,7 +368,7 @@ const setup: Plugin.Setup<typeof definition> = (ctx) => {
 
         <ctx.ui.SettingsSection title={ctx.t("settings.section.dictation")}>
           <ctx.ui.SettingsRow
-            id="whisper-language"
+            id="dictaphone-language"
             title={ctx.t("settings.language")}
             description={ctx.t("settings.language.description")}
           >
@@ -381,7 +381,7 @@ const setup: Plugin.Setup<typeof definition> = (ctx) => {
           </ctx.ui.SettingsRow>
 
           <ctx.ui.SettingsRow
-            id="whisper-prompt"
+            id="dictaphone-prompt"
             title={ctx.t("settings.prompt")}
             description={ctx.t("settings.prompt.description")}
           >
@@ -394,7 +394,7 @@ const setup: Plugin.Setup<typeof definition> = (ctx) => {
           </ctx.ui.SettingsRow>
 
           <ctx.ui.SettingsRow
-            id="whisper-max-seconds"
+            id="dictaphone-max-seconds"
             title={ctx.t("settings.maxSeconds")}
             description={ctx.t("settings.maxSeconds.description")}
           >
@@ -420,21 +420,21 @@ const setup: Plugin.Setup<typeof definition> = (ctx) => {
   }
 
   ctx.add(SettingsPage, (): SettingsPage => ({
-    id: "whisper",
+    id: "dictaphone",
     icon: "waveform",
     get title() {
       return ctx.t("settings.title")
     },
     get entries() {
       return [
-        { id: "whisper-service", title: ctx.t("settings.service"), description: ctx.t("settings.service.description") },
-        { id: "whisper-endpoint", title: ctx.t("settings.endpoint"), description: ctx.t("settings.endpoint.description") },
-        { id: "whisper-model", title: ctx.t("settings.model"), description: ctx.t("settings.model.description") },
-        { id: "whisper-api-key", title: ctx.t("settings.apiKey"), description: ctx.t("settings.apiKey.description") },
-        { id: "whisper-language", title: ctx.t("settings.language"), description: ctx.t("settings.language.description") },
-        { id: "whisper-prompt", title: ctx.t("settings.prompt"), description: ctx.t("settings.prompt.description") },
+        { id: "dictaphone-service", title: ctx.t("settings.service"), description: ctx.t("settings.service.description") },
+        { id: "dictaphone-endpoint", title: ctx.t("settings.endpoint"), description: ctx.t("settings.endpoint.description") },
+        { id: "dictaphone-model", title: ctx.t("settings.model"), description: ctx.t("settings.model.description") },
+        { id: "dictaphone-api-key", title: ctx.t("settings.apiKey"), description: ctx.t("settings.apiKey.description") },
+        { id: "dictaphone-language", title: ctx.t("settings.language"), description: ctx.t("settings.language.description") },
+        { id: "dictaphone-prompt", title: ctx.t("settings.prompt"), description: ctx.t("settings.prompt.description") },
         {
-          id: "whisper-max-seconds",
+          id: "dictaphone-max-seconds",
           title: ctx.t("settings.maxSeconds"),
           description: ctx.t("settings.maxSeconds.description"),
         },
@@ -451,7 +451,7 @@ const setup: Plugin.Setup<typeof definition> = (ctx) => {
     get description() {
       return ctx.t("command.dictate.description")
     },
-    keywords: "voice speech microphone whisper dictation dictee dicter micro",
+    keywords: "voice speech microphone dictation dictee dicter micro dictaphone",
     get group() {
       return ctx.t("command.group")
     },

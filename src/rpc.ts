@@ -11,7 +11,7 @@ import type { Rpc } from "@opencode/plugin/rpc"
  * checks its shape at compile time.
  */
 export const Voice = {
-  id: "whisper",
+  id: "dictaphone",
   events: {},
   methods: {
     transcribe: {

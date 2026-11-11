@@ -54,7 +54,7 @@ async function transcribeLocal(input: TranscribeInput, signal: AbortSignal): Pro
     })
     if (!response.ok) {
       const detail = (await response.text()).slice(0, 400)
-      throw new Error(`Le service Whisper a répondu ${response.status}${detail ? ` : ${detail}` : ""}`)
+      throw new Error(`Le service de transcription a répondu ${response.status}${detail ? ` : ${detail}` : ""}`)
     }
     return await readText(response)
   } finally {
@@ -91,7 +91,7 @@ async function transcribeOpenAI(input: TranscribeInput, signal: AbortSignal): Pr
     })
     if (!response.ok) {
       const detail = (await response.text()).slice(0, 400)
-      throw new Error(`L'API Whisper a répondu ${response.status}${detail ? ` : ${detail}` : ""}`)
+      throw new Error(`L'API de transcription a répondu ${response.status}${detail ? ` : ${detail}` : ""}`)
     }
     return await readText(response)
   } finally {
@@ -100,7 +100,7 @@ async function transcribeOpenAI(input: TranscribeInput, signal: AbortSignal): Pr
 }
 
 const plugin: Plugin.Plugin = {
-  id: "whisper",
+  id: "dictaphone",
   async setup(ctx) {
     await ctx.rpc.register(Voice, {
       transcribe: async (input, context): Promise<TranscribeOutput> => {

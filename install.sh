@@ -1,10 +1,10 @@
 #!/usr/bin/env bash
-# Turnkey installer for the OpenCode Whisper plugin (Linux, user scope).
+# Turnkey installer for the dictaphone-opencode plugin (Linux, user scope).
 #
 #   ./install.sh [model]
 #
 # - Builds the GUI bundle when npm is available and dist is missing.
-# - Installs the local Whisper server (uv) unless OPENCODE_WHISPER_SKIP_SERVER=1.
+# - Installs the local transcription server (uv) unless DICTAPHONE_SKIP_SERVER=1.
 # - Adds this directory to ~/.config/opencode/opencode.json.
 
 set -euo pipefail
@@ -24,7 +24,7 @@ if [[ ! -f "$PLUGIN_DIR/dist/gui-experimental.cjs" ]]; then
   (cd "$PLUGIN_DIR" && npm install --no-audit --no-fund && npm run build)
 fi
 
-if [[ "${OPENCODE_WHISPER_SKIP_SERVER:-0}" != "1" ]]; then
+if [[ "${DICTAPHONE_SKIP_SERVER:-0}" != "1" ]]; then
   "$PLUGIN_DIR/local-server/install.sh" "$MODEL"
 fi
 

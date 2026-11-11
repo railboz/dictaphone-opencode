@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
-"""Small local Whisper HTTP server used by the OpenCode Whisper plugin.
+"""Small local transcription HTTP server used by the dictaphone-opencode plugin.
 
 It accepts either a raw audio body (the plugin's local mode) or a
-multipart/form-data request compatible with whisper.cpp/OpenAI clients.
+multipart/form-data request compatible with OpenAI clients.
 
 Endpoints:
   GET  /health
@@ -91,7 +91,7 @@ def suffix_for(content_type: str | None, filename: str | None) -> str:
 
 
 class Handler(BaseHTTPRequestHandler):
-    server_version = "opencode-whisper/1.0"
+    server_version = "dictaphone-opencode/1.0"
 
     def log_message(self, fmt: str, *values: Any) -> None:
         return
@@ -189,11 +189,11 @@ class Handler(BaseHTTPRequestHandler):
 
 def main() -> None:
     global args, model
-    parser = argparse.ArgumentParser(description="Local Whisper server for OpenCode")
+    parser = argparse.ArgumentParser(description="Local transcription server for dictaphone-opencode")
     parser.add_argument("--host", default="127.0.0.1")
     parser.add_argument("--port", type=int, default=8178)
     parser.add_argument("--model", default="large-v3-turbo")
-    parser.add_argument("--model-dir", default=str(Path.home() / ".local/share/opencode-whisper/models"))
+    parser.add_argument("--model-dir", default=str(Path.home() / ".local/share/dictaphone-opencode/models"))
     parser.add_argument("--threads", type=int, default=min(8, os.cpu_count() or 4))
     parser.add_argument("--beam-size", type=int, default=1)
     args = parser.parse_args()

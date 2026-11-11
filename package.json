@@ -1,14 +1,14 @@
 {
-  "name": "opencode-whisper",
+  "name": "dictaphone-opencode",
   "version": "0.1.0",
-  "description": "Dictée vocale Whisper avec icône microphone pour OpenCode Desktop",
+  "description": "Dictée vocale avec icône microphone pour OpenCode Desktop",
   "type": "module",
   "license": "MIT",
   "author": "Logan",
   "keywords": [
     "opencode",
     "opencode-plugin",
-    "whisper",
+    "dictaphone",
     "speech-to-text",
     "dictation",
     "voice"

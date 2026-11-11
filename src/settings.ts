@@ -1,9 +1,9 @@
 import { Schema } from "effect"
 
-export type WhisperService = "local" | "openai" | "custom"
+export type DictaphoneService = "local" | "openai" | "custom"
 
-export interface WhisperSettings {
-  service: WhisperService
+export interface DictaphoneSettings {
+  service: DictaphoneService
   endpoint: string
   model: string
   language: string
@@ -12,7 +12,7 @@ export interface WhisperSettings {
   maxSeconds: number
 }
 
-export const WhisperSettingsSchema = Schema.Struct({
+export const DictaphoneSettingsSchema = Schema.Struct({
   service: Schema.Literals(["local", "openai", "custom"]),
   endpoint: Schema.String,
   model: Schema.String,
@@ -22,17 +22,17 @@ export const WhisperSettingsSchema = Schema.Struct({
   maxSeconds: Schema.Number,
 })
 
-export const defaultSettings: WhisperSettings = {
+export const defaultSettings: DictaphoneSettings = {
   service: "local",
   endpoint: "http://127.0.0.1:8178/transcribe",
   model: "whisper-1",
   language: "fr",
   apiKey: "",
-  prompt: "OpenCode, Whisper, TypeScript, Rust, Python",
+  prompt: "OpenCode, TypeScript, Rust, Python",
   maxSeconds: 60,
 }
 
-export const serviceDefaults: Record<WhisperService, { endpoint: string; model: string }> = {
+export const serviceDefaults: Record<DictaphoneService, { endpoint: string; model: string }> = {
   local: {
     endpoint: "http://127.0.0.1:8178/transcribe",
     model: "whisper-1",
