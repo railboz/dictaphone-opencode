@@ -14,6 +14,8 @@ Endpoints:
 from __future__ import annotations
 
 import argparse
+import base64
+import ctypes
 import json
 import os
 import tempfile
@@ -25,7 +27,36 @@ from pathlib import Path
 from typing import Any
 from urllib.parse import parse_qs, urlparse
 
-from faster_whisper import WhisperModel
+
+def preload_cuda_libraries() -> None:
+    """Load the CUDA libraries shipped by the nvidia-* wheels, if present."""
+    try:
+        import nvidia
+    except ImportError:
+        return
+
+    roots = [Path(root) for root in getattr(nvidia, "__path__", [])]
+    libraries = (
+        "cublas/lib/libcublas.so.12",
+        "cublas/lib/libcublasLt.so.12",
+        "cudnn/lib/libcudnn.so.9",
+        "cuda_nvrtc/lib/libnvrtc.so.12",
+    )
+    for relative in libraries:
+        for root in roots:
+            candidate = root / relative
+            if not candidate.exists():
+                continue
+            try:
+                ctypes.CDLL(str(candidate), mode=ctypes.RTLD_GLOBAL)
+            except OSError as error:
+                print(f"Could not preload {candidate}: {error}", flush=True)
+            break
+
+
+preload_cuda_libraries()
+
+from faster_whisper import WhisperModel  # noqa: E402
 
 MAX_BODY = 25 * 1024 * 1024
 SUPPORTED_SUFFIXES = {
@@ -41,6 +72,8 @@ SUPPORTED_SUFFIXES = {
 
 args: argparse.Namespace
 model: WhisperModel
+runtime_device = "cpu"
+runtime_compute_type = "int8"
 model_lock = threading.Lock()
 transcribe_lock = threading.Lock()
 
@@ -49,10 +82,15 @@ def log(message: str) -> None:
     print(message, flush=True)
 
 
-def parse_multipart(content_type: str, body: bytes) -> tuple[bytes | None, dict[str, str], str | None]:
+def parse_multipart(
+    content_type: str, body: bytes
+) -> tuple[bytes | None, dict[str, str], str | None]:
     """Extract the uploaded file, text fields and file content type."""
     message = BytesParser(policy=email_policy).parsebytes(
-        b"Content-Type: " + content_type.encode("utf-8") + b"\r\nMIME-Version: 1.0\r\n\r\n" + body
+        b"Content-Type: "
+        + content_type.encode("utf-8")
+        + b"\r\nMIME-Version: 1.0\r\n\r\n"
+        + body
     )
     if not message.is_multipart():
         return None, {}, None
@@ -72,7 +110,9 @@ def parse_multipart(content_type: str, body: bytes) -> tuple[bytes | None, dict[
                 file_type = part.get_content_type()
         else:
             try:
-                fields[name] = payload.decode(part.get_content_charset() or "utf-8").strip()
+                fields[name] = payload.decode(
+                    part.get_content_charset() or "utf-8"
+                ).strip()
             except (LookupError, UnicodeDecodeError):
                 fields[name] = payload.decode("utf-8", "replace").strip()
     return file_data, fields, file_type
@@ -109,13 +149,24 @@ class Handler(BaseHTTPRequestHandler):
         self.send_response(204)
         self.send_header("Access-Control-Allow-Origin", "*")
         self.send_header("Access-Control-Allow-Methods", "GET, POST, OPTIONS")
-        self.send_header("Access-Control-Allow-Headers", "Content-Type, X-Language")
+        self.send_header(
+            "Access-Control-Allow-Headers",
+            "Content-Type, X-Language, X-Filename, X-Prompt, X-Prompt-B64",
+        )
         self.end_headers()
 
     def do_GET(self) -> None:
         path = urlparse(self.path).path
         if path in ("/health", "/v1/health", "/"):
-            self.send_json(200, {"ok": True, "model": args.model, "device": "cpu"})
+            self.send_json(
+                200,
+                {
+                    "ok": True,
+                    "model": args.model,
+                    "device": runtime_device,
+                    "compute_type": runtime_compute_type,
+                },
+            )
             return
         self.send_json(404, {"ok": False, "error": "Not found"})
 
@@ -136,15 +187,38 @@ class Handler(BaseHTTPRequestHandler):
         body = self.rfile.read(length)
         content_type = self.headers.get("Content-Type", "")
         query = parse_qs(parsed.query)
-        language = (self.headers.get("X-Language") or (query.get("language") or [""])[0] or "fr").strip()
-        prompt = (self.headers.get("X-Prompt") or (query.get("prompt") or [""])[0] or "").strip()
+        language = (
+            self.headers.get("X-Language") or (query.get("language") or [""])[0] or "fr"
+        ).strip()
+        prompt = (
+            self.headers.get("X-Prompt") or (query.get("prompt") or [""])[0] or ""
+        ).strip()
+        encoded_prompt = (
+            self.headers.get("X-Prompt-B64")
+            or (query.get("prompt_b64") or [""])[0]
+            or ""
+        ).strip()
+        if encoded_prompt:
+            try:
+                prompt = (
+                    base64.b64decode(encoded_prompt, validate=True)
+                    .decode("utf-8")
+                    .strip()
+                )
+            except (ValueError, UnicodeDecodeError):
+                self.send_json(
+                    400, {"ok": False, "error": "Invalid X-Prompt-B64 header"}
+                )
+                return
         filename: str | None = None
         audio = body
 
         if content_type.lower().startswith("multipart/form-data"):
             file_data, fields, file_type = parse_multipart(content_type, body)
             if file_data is None:
-                self.send_json(400, {"ok": False, "error": "Missing multipart file field"})
+                self.send_json(
+                    400, {"ok": False, "error": "Missing multipart file field"}
+                )
                 return
             audio = file_data
             language = fields.get("language", language) or language
@@ -187,27 +261,77 @@ class Handler(BaseHTTPRequestHandler):
                 pass
 
 
+def choose_device() -> str:
+    if args.device != "auto":
+        return args.device
+    try:
+        import ctranslate2
+
+        return "cuda" if ctranslate2.get_cuda_device_count() > 0 else "cpu"
+    except Exception:  # noqa: BLE001 - any CUDA probe failure means CPU
+        return "cpu"
+
+
+def load_model() -> tuple[WhisperModel, str, str]:
+    global runtime_device, runtime_compute_type
+    device = choose_device()
+    compute_type = args.compute_type
+    if compute_type == "auto":
+        compute_type = "float16" if device == "cuda" else "int8"
+
+    try:
+        loaded = WhisperModel(
+            args.model,
+            device=device,
+            compute_type=compute_type,
+            cpu_threads=args.threads,
+            download_root=args.model_dir,
+        )
+    except Exception as error:  # noqa: BLE001 - fall back to CPU on CUDA errors
+        if device != "cuda":
+            raise
+        log(f"CUDA unavailable ({error}); falling back to CPU.")
+        device = "cpu"
+        compute_type = "int8"
+        loaded = WhisperModel(
+            args.model,
+            device="cpu",
+            compute_type="int8",
+            cpu_threads=args.threads,
+            download_root=args.model_dir,
+        )
+
+    runtime_device = device
+    runtime_compute_type = compute_type
+    return loaded, device, compute_type
+
+
 def main() -> None:
     global args, model
-    parser = argparse.ArgumentParser(description="Local transcription server for dictaphone-opencode")
+    parser = argparse.ArgumentParser(
+        description="Local transcription server for dictaphone-opencode"
+    )
     parser.add_argument("--host", default="127.0.0.1")
     parser.add_argument("--port", type=int, default=8178)
     parser.add_argument("--model", default="large-v3-turbo")
-    parser.add_argument("--model-dir", default=str(Path.home() / ".local/share/dictaphone-opencode/models"))
+    parser.add_argument(
+        "--model-dir",
+        default=str(Path.home() / ".local/share/dictaphone-opencode/models"),
+    )
     parser.add_argument("--threads", type=int, default=min(8, os.cpu_count() or 4))
-    parser.add_argument("--beam-size", type=int, default=1)
+    parser.add_argument("--device", choices=["auto", "cpu", "cuda"], default="auto")
+    parser.add_argument(
+        "--compute-type",
+        default="auto",
+        help="auto, float16, int8, int8_float16…",
+    )
+    parser.add_argument("--beam-size", type=int, default=5)
     args = parser.parse_args()
 
     Path(args.model_dir).mkdir(parents=True, exist_ok=True)
     log(f"loading model {args.model} (first run downloads it)…")
-    model = WhisperModel(
-        args.model,
-        device="cpu",
-        compute_type="int8",
-        cpu_threads=args.threads,
-        download_root=args.model_dir,
-    )
-    log(f"model ready on {args.model}")
+    model, device, compute_type = load_model()
+    log(f"model ready on {args.model} ({device}, {compute_type})")
     server = ThreadingHTTPServer((args.host, args.port), Handler)
     log(f"listening on http://{args.host}:{args.port}")
     server.serve_forever()

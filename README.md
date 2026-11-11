@@ -20,7 +20,7 @@ prompt sans être envoyé.*
 - Trois moteurs : serveur local, OpenAI, ou tout endpoint compatible OpenAI.
 - Réglages intégrés dans **Settings › Dictaphone**.
 - Audio converti en WAV 16 kHz mono avant l'envoi.
-- Transcription locale en ~1 à 2 secondes pour une phrase courte (`small`).
+- Transcription locale rapide : ~0,5 s sur GPU, quelques secondes sur CPU.
 
 ## Comment ça marche
 
@@ -36,16 +36,19 @@ configuré). L'audio ne transite qu'entre OpenCode et ce service.
 
 ## Performances mesurées
 
-Sur un i9-9900K, modèle `small`, phrase française de 7,5 s :
+Sur un i9-9900K et une RTX 2080 Ti, phrase française de 7,5 s :
 
-| Étape | Temps |
+| Configuration | Temps |
 |---|---|
-| Enregistrement + conversion WAV | inclus dans l'interface |
-| Transcription locale | **~1,1 s** |
-| Insertion dans le prompt | instantanée |
+| `large-v3-turbo` sur GPU (float16, beam 5) | **~0,5 s** |
+| `large-v3` sur GPU (float16, beam 5) | ~1,1 s |
+| `small` sur CPU (int8, beam 5) | ~1,6 s |
+| `large-v3-turbo` sur CPU (int8, beam 5) | ~4,9 s |
 
-Le modèle `large-v3-turbo` améliore la précision mais prend ~5 s pour la même
-phrase. `small` est le compromis par défaut.
+Le modèle `large-v3-turbo` est utilisé par défaut quand un GPU NVIDIA est
+détecté : bien plus exact que `small`, notamment sur les noms propres et les
+phrases ambiguës. Sur CPU, l'installeur garde `small` pour rester rapide ;
+`large-v3-turbo` reste disponible en le demandant explicitement.
 
 ## Prérequis
 
@@ -54,6 +57,9 @@ phrase. `small` est le compromis par défaut.
 - **Python 3.12** et [`uv`](https://docs.astral.sh/uv/) pour le serveur local.
   `uv` s'installe en une commande :
   `curl -LsSf https://astral.sh/uv/install.sh | sh`
+- Facultatif : un GPU NVIDIA avec un pilote récent pour la transcription locale
+  rapide avec `large-v3-turbo`. L'installeur ajoute les bibliothèques CUDA
+  nécessaires dans l'environnement virtuel.
 - Facultatif : une clé API OpenAI si vous préférez le mode cloud.
 
 > Le serveur local fourni utilise systemd (Linux). Sur macOS ou Windows,
@@ -65,8 +71,11 @@ phrase. `small` est le compromis par défaut.
 ```bash
 git clone https://github.com/railboz/dictaphone-opencode.git
 cd dictaphone-opencode
-./install.sh small
+./install.sh
 ```
+
+Sur une machine avec GPU NVIDIA, le modèle par défaut est `large-v3-turbo` ;
+sinon `small`. Pour forcer un modèle : `./install.sh large-v3`.
 
 Le script :
 
@@ -108,7 +117,7 @@ L'enregistrement s'arrête automatiquement à la limite.
 | Modèle | Nom du modèle pour les services compatibles OpenAI |
 | Langue | `fr`, `en`, … ou `auto` |
 | Clé API | Stockée localement ; vide = utilise `OPENAI_API_KEY` |
-| Vocabulaire / contexte | Termes techniques et noms de projets |
+| Vocabulaire / contexte | Termes techniques et noms de projets, envoyés comme contexte au moteur |
 | Durée maximale | Arrêt automatique de l'enregistrement |
 
 ### Serveur local
@@ -119,10 +128,19 @@ curl http://127.0.0.1:8178/health
 journalctl --user -u dictaphone-opencode -f
 ```
 
-Modèle par défaut : `small` (rapide, ~500 Mo). Pour une meilleure précision :
+Le modèle par défaut dépend du matériel : `large-v3-turbo` (~1,6 Go) si un GPU
+NVIDIA est détecté, sinon `small` (~500 Mo). Le serveur choisit automatiquement
+CUDA/float16 et retombe sur CPU/int8 en cas de problème.
 
 ```bash
-./local-server/install.sh large-v3-turbo
+./local-server/install.sh large-v3    # précision maximale sur GPU
+./local-server/install.sh small       # vitesse maximale sur CPU
+```
+
+`curl http://127.0.0.1:8178/health` indique le modèle et le matériel utilisés :
+
+```json
+{"ok": true, "model": "large-v3-turbo", "device": "cuda", "compute_type": "float16"}
 ```
 
 Le serveur accepte aussi les requêtes `multipart/form-data` sur `/inference`
@@ -156,6 +174,9 @@ avec `file`, `model`, `language` et `response_format=json`.
 - **Erreur de transcription** : testez
   `curl http://127.0.0.1:8178/health` et
   `journalctl --user -u dictaphone-opencode -f`.
+- **Le GPU n'est pas utilisé** : `/health` doit afficher `"device": "cuda"`.
+  Vérifiez `nvidia-smi`, puis relancez `./local-server/install.sh` pour
+  installer les bibliothèques CUDA dans l'environnement virtuel.
 - **Texte vide** : parlez plus fort ou augmentez la durée ; le serveur local
   filtre les silences avec VAD.
 

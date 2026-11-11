@@ -41,14 +41,18 @@ async function transcribeLocal(input: TranscribeInput, signal: AbortSignal): Pro
   if (audio.byteLength === 0) throw new Error("Enregistrement audio vide.")
 
   const timeout = withTimeout(signal)
+  const prompt = input.prompt.trim()
+  const headers: Record<string, string> = {
+    "content-type": "audio/wav",
+    "x-language": input.language || "fr",
+    "x-filename": input.filename || "audio.wav",
+  }
+  if (prompt) headers["x-prompt-b64"] = Buffer.from(prompt, "utf8").toString("base64")
+
   try {
     const response = await fetch(input.endpoint, {
       method: "POST",
-      headers: {
-        "content-type": "audio/wav",
-        "x-language": input.language || "fr",
-        "x-filename": input.filename || "audio.wav",
-      },
+      headers,
       body: audio,
       signal: timeout.signal,
     })
