@@ -58,4 +58,4 @@ echo "  Model:    $MODEL"
 echo "  Endpoint: http://127.0.0.1:8178/transcribe"
 echo "  Logs:     journalctl --user -u opencode-whisper -f"
 echo
-echo "The first transcription downloads the model (a few hundred MB)."
+echo "The first server start downloads the model (a few hundred MB)."

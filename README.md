@@ -32,7 +32,7 @@ Micro → MediaRecorder → WAV 16 kHz mono → RPC OpenCode → Whisper
 
 Le plugin a deux parties : une partie GUI (bouton, capture micro, insertion
 dans le prompt) et une partie serveur (appel HTTP vers Whisper). L'audio ne
-transite que entre OpenCode et le service configuré.
+transite qu'entre OpenCode et le service configuré.
 
 ## Performances mesurées
 
