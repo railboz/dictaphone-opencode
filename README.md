@@ -155,6 +155,11 @@ chargés :
   ~/.local/share/dictaphone-opencode/server.py --prepare
 ```
 
+En français, le moteur ajoute automatiquement une consigne de style
+(« ponctuation, majuscules, accents ») au vocabulaire. Sur 30 phrases
+françaises de test, elle améliore la capitalisation (90 % contre 83 %) et la
+ponctuation finale (80 % contre 77 %), sans ralentir la transcription.
+
 ### Mémoire
 
 Mesures sur la RTX 2080 Ti, moteur chargé :
