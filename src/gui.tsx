@@ -20,6 +20,20 @@ import {
 
 type Phase = "idle" | "recording" | "transcribing"
 
+interface ComposerSlot {
+  host: HTMLElement
+  submit: HTMLElement
+  form: HTMLFormElement
+  editor: HTMLElement
+}
+
+interface ComposerTarget {
+  form: HTMLFormElement
+  editor: HTMLElement
+  sessionKey: string | undefined
+  range: Range | undefined
+}
+
 const definition = Plugin.define({
   stores: {
     settings: Store.global(DictaphoneSettingsSchema, defaultSettings),
@@ -35,6 +49,8 @@ const setup: Plugin.Setup<typeof definition> = (ctx) => {
 
   let recording: Recording | undefined
   let timer: ReturnType<typeof setInterval> | undefined
+  let poll: ReturnType<typeof setInterval> | undefined
+  let dictationTarget: ComposerTarget | undefined
   let startedAt = 0
 
   const settings = (): DictaphoneSettings => ctx.stores.settings.value as DictaphoneSettings
@@ -64,15 +80,18 @@ const setup: Plugin.Setup<typeof definition> = (ctx) => {
 
   const start = async () => {
     if (phase() !== "idle") return
-    if (!ctx.screen.current()?.composer) {
+    const target = captureTarget()
+    if (!target) {
       ctx.toast.show({ variant: "error", title: ctx.t("errors.noSession") })
       return
     }
 
+    dictationTarget = target
     try {
       const next = await startRecording()
       if (ctx.signal.aborted) {
         next.cancel()
+        dictationTarget = undefined
         return
       }
       recording = next
@@ -87,6 +106,7 @@ const setup: Plugin.Setup<typeof definition> = (ctx) => {
         if (elapsed >= limit) void stop()
       }, 200)
     } catch (error) {
+      dictationTarget = undefined
       const denied = error instanceof Error && (error.name === "NotAllowedError" || error.name === "SecurityError")
       fail(denied ? ctx.t("errors.mic", { error: "autorisation refusée" }) : ctx.t("errors.mic", { error: String(error) }), error)
     }
@@ -100,7 +120,8 @@ const setup: Plugin.Setup<typeof definition> = (ctx) => {
     clearTimer()
     setPhase("transcribing")
 
-    const session = ctx.sessions.current()
+    const target = dictationTarget
+    dictationTarget = undefined
     try {
       const blob = await active.stop()
       if (blob.size === 0) throw new Error("L'enregistrement est vide.")
@@ -134,20 +155,23 @@ const setup: Plugin.Setup<typeof definition> = (ctx) => {
         return
       }
 
-      const routed = ctx.sessions.current()
-      if (!session || !routed || session.key !== routed.key) {
+      const routedKey = ctx.sessions.current()?.key
+      if (!target || target.sessionKey !== routedKey) {
         ctx.toast.show({ variant: "error", title: ctx.t("errors.sessionChanged") })
         return
       }
 
       const composer = ctx.screen.current()?.composer
-      if (!composer) throw new Error(ctx.t("errors.noSession"))
-
-      const existing = composer.text()
-      const prefix = existing.length > 0 && !/\s$/.test(existing) ? " " : ""
-      const suffix = /\s$/.test(text) ? "" : " "
-      composer.insert(prefix + text + suffix)
-      composer.focus()
+      if (composer) {
+        const existing = composer.text()
+        const prefix = existing.length > 0 && !/\s$/.test(existing) ? " " : ""
+        const suffix = /\s$/.test(text) ? "" : " "
+        composer.insert(prefix + text + suffix)
+        composer.focus()
+      } else if (!insertDraftText(target, text)) {
+        ctx.toast.show({ variant: "error", title: ctx.t("errors.sessionChanged") })
+        return
+      }
 
       ctx.toast.show({
         variant: "success",
@@ -203,9 +227,97 @@ const setup: Plugin.Setup<typeof definition> = (ctx) => {
     button.style.boxShadow = active ? "0 0 0 3px color-mix(in srgb, #ef4444 14%, transparent)" : "none"
   }
 
+  const findComposer = (): ComposerSlot | undefined => {
+    let best: (ComposerSlot & { bottom: number }) | undefined
+    for (const candidate of document.querySelectorAll<HTMLElement>('[data-slot="composer-actions"]')) {
+      const submitButton = candidate.querySelector<HTMLElement>('[data-action="composer-submit"]')
+      if (!submitButton || candidate.getClientRects().length === 0) continue
+      if (getComputedStyle(candidate).visibility === "hidden") continue
+      const rect = candidate.getBoundingClientRect()
+      if (rect.width <= 0 || rect.height <= 0) continue
+      const form = candidate.closest("form")
+      if (!form) continue
+      const editor = form.querySelector<HTMLElement>('[contenteditable="true"]')
+      if (!editor || editor.getClientRects().length === 0) continue
+      if (!best || rect.bottom > best.bottom) {
+        best = { host: candidate, submit: submitButton, form, editor, bottom: rect.bottom }
+      }
+    }
+    return best
+  }
+
+  const captureTarget = (): ComposerTarget | undefined => {
+    const slot = findComposer()
+    if (!slot) return undefined
+
+    const selection = window.getSelection()
+    let range: Range | undefined
+    if (selection && selection.rangeCount > 0) {
+      const candidate = selection.getRangeAt(0)
+      if (slot.editor.contains(candidate.startContainer) && slot.editor.contains(candidate.endContainer)) {
+        const saved = candidate.cloneRange()
+        saved.collapse(false)
+        range = saved
+      }
+    }
+
+    return { form: slot.form, editor: slot.editor, sessionKey: ctx.sessions.current()?.key, range }
+  }
+
+  const insertDraftText = (target: ComposerTarget, text: string): boolean => {
+    const editor = target.form.isConnected
+      ? target.form.querySelector<HTMLElement>('[contenteditable="true"]')
+      : undefined
+    if (!editor) return false
+
+    const range = target.range && editor.contains(target.range.startContainer) ? target.range : undefined
+    let before = editor.innerText
+    if (range) {
+      const preceding = document.createRange()
+      preceding.selectNodeContents(editor)
+      preceding.setEnd(range.startContainer, range.startOffset)
+      before = preceding.toString()
+    }
+
+    editor.focus()
+    const selection = window.getSelection()
+    if (selection) {
+      selection.removeAllRanges()
+      if (range) {
+        selection.addRange(range)
+      } else {
+        const end = document.createRange()
+        end.selectNodeContents(editor)
+        end.collapse(false)
+        selection.addRange(end)
+      }
+    }
+
+    const prefix = before.length > 0 && !/\s$/.test(before) ? " " : ""
+    const suffix = /\s$/.test(text) ? "" : " "
+    const payload = prefix + text + suffix
+    if (!document.execCommand("insertText", false, payload)) {
+      const node = document.createTextNode(payload)
+      if (range) {
+        range.deleteContents()
+        range.insertNode(node)
+        range.setStartAfter(node)
+        range.collapse(true)
+        selection?.removeAllRanges()
+        selection?.addRange(range)
+      } else {
+        editor.appendChild(node)
+      }
+      editor.dispatchEvent(new InputEvent("input", { bubbles: true, inputType: "insertText", data: payload }))
+    }
+    editor.focus()
+    return true
+  }
+
   const ensure = () => {
     frame = 0
-    if (!ctx.sessions.current() || !ctx.screen.current()?.composer) {
+    const slot = findComposer()
+    if (!slot) {
       button.remove()
       host = undefined
       submit = undefined
@@ -213,8 +325,8 @@ const setup: Plugin.Setup<typeof definition> = (ctx) => {
       return
     }
     if (
-      host?.isConnected &&
-      submit?.isConnected &&
+      host === slot.host &&
+      submit === slot.submit &&
       anchor?.isConnected &&
       button.parentElement === host &&
       button.nextElementSibling === anchor
@@ -222,26 +334,8 @@ const setup: Plugin.Setup<typeof definition> = (ctx) => {
       return
     }
 
-    let best: { host: HTMLElement; submit: HTMLElement; bottom: number } | undefined
-    for (const candidate of document.querySelectorAll<HTMLElement>('[data-slot="composer-actions"]')) {
-      const submitButton = candidate.querySelector<HTMLElement>('[data-action="composer-submit"]')
-      if (!submitButton || candidate.getClientRects().length === 0) continue
-      if (getComputedStyle(candidate).visibility === "hidden") continue
-      const rect = candidate.getBoundingClientRect()
-      if (rect.width <= 0 || rect.height <= 0) continue
-      if (!best || rect.bottom > best.bottom) best = { host: candidate, submit: submitButton, bottom: rect.bottom }
-    }
-
-    if (!best) {
-      button.remove()
-      host = undefined
-      submit = undefined
-      anchor = undefined
-      return
-    }
-
-    host = best.host
-    submit = best.submit
+    host = slot.host
+    submit = slot.submit
     let top: HTMLElement = submit
     while (top.parentElement && top.parentElement !== host) top = top.parentElement
     if (top.parentElement !== host) {
@@ -278,6 +372,7 @@ const setup: Plugin.Setup<typeof definition> = (ctx) => {
     ensure()
   }
   bootFrame = requestAnimationFrame(boot)
+  poll = setInterval(schedule, 500)
 
   button.addEventListener("click", () => void toggle())
   button.addEventListener("mouseenter", () => {
@@ -458,7 +553,7 @@ const setup: Plugin.Setup<typeof definition> = (ctx) => {
     section: "prompt",
     bind: "mod+shift+m",
     slash: { name: "voice" },
-    enabled: phase() !== "transcribing" && !!ctx.sessions.current(),
+    enabled: phase() !== "transcribing",
     run: () => {
       void toggle()
     },
@@ -489,8 +584,11 @@ const setup: Plugin.Setup<typeof definition> = (ctx) => {
 
   return () => {
     clearTimer()
+    if (poll !== undefined) clearInterval(poll)
+    poll = undefined
     recording?.cancel()
     recording = undefined
+    dictationTarget = undefined
     observer?.disconnect()
     if (frame) cancelAnimationFrame(frame)
     if (bootFrame) cancelAnimationFrame(bootFrame)

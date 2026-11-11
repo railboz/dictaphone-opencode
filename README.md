@@ -13,7 +13,7 @@ prompt sans être envoyé.*
 ## Ce que fait le plugin
 
 - Icône microphone dessinée en SVG, à côté du bouton d'envoi (icône seule,
-  sans libellé).
+  sans libellé), y compris dans le brouillon d'une nouvelle session.
 - Raccourci `Ctrl+Maj+M` (ou `Cmd+Maj+M` sur macOS) et commande `/voice`.
 - Pastille d'état au-dessus du prompt : écoute, durée, transcription.
 - Le texte transcrit est **inséré dans le prompt**, jamais envoyé tout seul.
@@ -97,7 +97,8 @@ puis renseignez la clé dans **Settings › Dictaphone**.
 
 ## Utilisation
 
-1. Ouvrez une session.
+1. Ouvrez une session, ou créez une nouvelle session : le bouton est aussi
+   disponible dans le brouillon.
 2. Cliquez sur l'icône **micro**, appuyez sur `Ctrl+Maj+M`, ou tapez `/voice`.
 3. Parlez : l'icône devient rouge.
 4. Cliquez à nouveau pour arrêter. Le service transcrit et insère le texte.
