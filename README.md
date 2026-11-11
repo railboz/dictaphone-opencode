@@ -5,6 +5,11 @@ microphone dans l'en-tête de session.
 
 ![Bouton microphone dans OpenCode](docs/mic-button.png)
 
+![Transcription insérée dans le prompt](docs/dictation.png)
+
+*Le bouton « Dicter » dans l'en-tête, et le texte Whisper inséré dans le
+prompt sans être envoyé.*
+
 ## Ce que fait le plugin
 
 - Bouton microphone dessiné en SVG dans l'en-tête de session.
