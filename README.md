@@ -17,22 +17,27 @@ prompt sans être envoyé.*
 - Raccourci `Ctrl+Maj+M` (ou `Cmd+Maj+M` sur macOS) et commande `/voice`.
 - Pastille d'état au-dessus du prompt : écoute, durée, transcription.
 - Le texte transcrit est **inséré dans le prompt**, jamais envoyé tout seul.
-- Trois moteurs : serveur local, OpenAI, ou tout endpoint compatible OpenAI.
+- Trois moteurs : moteur local intégré, OpenAI, ou tout endpoint compatible
+  OpenAI.
 - Réglages intégrés dans **Settings › Dictaphone**.
 - Audio converti en WAV 16 kHz mono avant l'envoi.
 - Transcription locale rapide : ~0,5 s sur GPU, quelques secondes sur CPU.
+- Aucun serveur local : le moteur est lancé à la demande par le plugin et
+  s'arrête après dix minutes sans dictée.
 
 ## Comment ça marche
 
 ```text
-Micro → MediaRecorder → WAV 16 kHz mono → RPC OpenCode → service de transcription
+Micro → MediaRecorder → WAV 16 kHz mono → RPC OpenCode → moteur local intégré
                                                        ↓
                           prompt OpenCode ← texte ←────┘
 ```
 
 Le plugin a deux parties : une partie GUI (icône micro, capture audio,
-insertion dans le prompt) et une partie serveur (appel HTTP vers le service
-configuré). L'audio ne transite qu'entre OpenCode et ce service.
+insertion dans le prompt) et une partie moteur (processus Python lancé à la
+demande, dialogue JSON sur l'entrée/sortie standard). Aucun port n'est ouvert,
+aucun service système n'est installé. L'audio ne quitte pas la machine en mode
+local.
 
 ## Performances mesurées
 
@@ -54,7 +59,7 @@ phrases ambiguës. Sur CPU, l'installeur garde `small` pour rester rapide ;
 
 - **OpenCode Desktop 2.2.7 ou plus récent** (API des plugins GUI
   `gui-experimental`).
-- **Python 3.12** et [`uv`](https://docs.astral.sh/uv/) pour le serveur local.
+- **Python 3.12** et [`uv`](https://docs.astral.sh/uv/) pour le moteur local.
   `uv` s'installe en une commande :
   `curl -LsSf https://astral.sh/uv/install.sh | sh`
 - Facultatif : un GPU NVIDIA avec un pilote récent pour la transcription locale
@@ -62,9 +67,9 @@ phrases ambiguës. Sur CPU, l'installeur garde `small` pour rester rapide ;
   nécessaires dans l'environnement virtuel.
 - Facultatif : une clé API OpenAI si vous préférez le mode cloud.
 
-> Le serveur local fourni utilise systemd (Linux). Sur macOS ou Windows,
-> utilisez OpenAI ou un endpoint compatible OpenAI : l'icône microphone et
-> l'insertion dans le prompt fonctionnent de la même façon.
+> Le moteur local est un processus lancé par le plugin, pas un service.
+> L'installeur est prévu pour Linux ; sur macOS ou Windows, utilisez OpenAI ou
+> un endpoint compatible. L'icône et l'insertion fonctionnent de la même façon.
 
 ## Installation clé en main
 
@@ -80,14 +85,14 @@ sinon `small`. Pour forcer un modèle : `./install.sh large-v3`.
 Le script :
 
 1. construit le bundle GUI si `dist/` est absent ;
-2. installe le serveur local dans `~/.local/share/dictaphone-opencode` et le
-   service systemd utilisateur ;
+2. installe le moteur local dans `~/.local/share/dictaphone-opencode`
+   (environnement Python, modèle pré-téléchargé) — sans service ni port ;
 3. ajoute le dossier du plugin à `~/.config/opencode/opencode.json`.
 
 Redémarrez OpenCode Desktop. L'icône micro apparaît à côté du bouton d'envoi
-d'une session.
+d'une session, y compris dans un nouveau brouillon.
 
-Pour utiliser uniquement OpenAI (sans serveur local) :
+Pour utiliser uniquement OpenAI (sans moteur local) :
 
 ```bash
 DICTAPHONE_SKIP_SERVER=1 ./install.sh
@@ -100,8 +105,9 @@ puis renseignez la clé dans **Settings › Dictaphone**.
 1. Ouvrez une session, ou créez une nouvelle session : le bouton est aussi
    disponible dans le brouillon.
 2. Cliquez sur l'icône **micro**, appuyez sur `Ctrl+Maj+M`, ou tapez `/voice`.
-3. Parlez : l'icône devient rouge.
-4. Cliquez à nouveau pour arrêter. Le service transcrit et insère le texte.
+3. Parlez : l'icône devient rouge. En mode local, le moteur démarre pendant
+   que vous parlez, sans bloquer l'enregistrement.
+4. Cliquez à nouveau pour arrêter. Le moteur transcrit et insère le texte.
 5. Relisez, corrigez si besoin, puis envoyez.
 
 La durée maximale (30, 60, 120 ou 300 s) se règle dans les paramètres.
@@ -113,39 +119,37 @@ L'enregistrement s'arrête automatiquement à la limite.
 
 | Champ | Rôle |
 |---|---|
-| Service | `Serveur local`, `OpenAI`, ou `Compatible OpenAI` |
-| URL du service | Endpoint HTTP qui reçoit l'audio |
+| Service | `Moteur intégré (sans serveur)`, `OpenAI`, ou `Compatible OpenAI` |
+| Modèle local | `auto`, `large-v3-turbo`, `large-v3` ou `small` |
+| URL du service | Endpoint HTTP pour OpenAI et les services compatibles |
 | Modèle | Nom du modèle pour les services compatibles OpenAI |
 | Langue | `fr`, `en`, … ou `auto` |
 | Clé API | Stockée localement ; vide = utilise `OPENAI_API_KEY` |
 | Vocabulaire / contexte | Termes techniques et noms de projets, envoyés comme contexte au moteur |
 | Durée maximale | Arrêt automatique de l'enregistrement |
 
-### Serveur local
-
-```bash
-systemctl --user status dictaphone-opencode
-curl http://127.0.0.1:8178/health
-journalctl --user -u dictaphone-opencode -f
-```
+### Moteur local
 
 Le modèle par défaut dépend du matériel : `large-v3-turbo` (~1,6 Go) si un GPU
-NVIDIA est détecté, sinon `small` (~500 Mo). Le serveur choisit automatiquement
-CUDA/float16 et retombe sur CPU/int8 en cas de problème.
+NVIDIA est détecté, sinon `small` (~500 Mo). Le moteur choisit automatiquement
+CUDA/float16 et retombe sur CPU/int8 en cas de problème. Il est lancé au
+premier clic sur le micro, reste chaud pendant dix minutes, puis s'arrête.
 
 ```bash
 ./local-server/install.sh large-v3    # précision maximale sur GPU
 ./local-server/install.sh small       # vitesse maximale sur CPU
 ```
 
-`curl http://127.0.0.1:8178/health` indique le modèle et le matériel utilisés :
+Le modèle installé est enregistré dans
+`~/.local/share/dictaphone-opencode/model`. Le réglage
+**Settings › Dictaphone › Modèle local** permet de le remplacer ponctuellement
+(`auto` réutilise le modèle installé). Pour vérifier le modèle et le matériel
+chargés :
 
-```json
-{"ok": true, "model": "large-v3-turbo", "device": "cuda", "compute_type": "float16"}
+```bash
+~/.local/share/dictaphone-opencode/venv/bin/python \
+  ~/.local/share/dictaphone-opencode/server.py --prepare
 ```
-
-Le serveur accepte aussi les requêtes `multipart/form-data` sur `/inference`
-et `/v1/audio/transcriptions`, pour les clients compatibles OpenAI.
 
 ### OpenAI
 
@@ -161,7 +165,8 @@ avec `file`, `model`, `language` et `response_format=json`.
 
 ## Confidentialité
 
-- En mode local, l'audio ne quitte pas la machine (OpenCode → serveur local).
+- En mode local, l'audio ne quitte pas la machine (OpenCode → processus local).
+- Aucun port n'est ouvert, aucun service ne tourne en permanence.
 - En mode OpenAI, l'audio est envoyé à l'API configurée.
 - La clé API est stockée dans le stockage local d'OpenCode, pas dans le code.
 
@@ -172,13 +177,13 @@ avec `file`, `model`, `language` et `response_format=json`.
   `~/.local/share/opencode/log/opencode.log`.
 - **Microphone inaccessible** : autorisez le micro dans les réglages du
   système (*Paramètres › Son › Entrée*).
-- **Erreur de transcription** : testez
-  `curl http://127.0.0.1:8178/health` et
-  `journalctl --user -u dictaphone-opencode -f`.
-- **Le GPU n'est pas utilisé** : `/health` doit afficher `"device": "cuda"`.
-  Vérifiez `nvidia-smi`, puis relancez `./local-server/install.sh` pour
-  installer les bibliothèques CUDA dans l'environnement virtuel.
-- **Texte vide** : parlez plus fort ou augmentez la durée ; le serveur local
+- **Erreur de transcription** : le message affiché reprend la fin de la sortie
+  du moteur. Relancez `./install.sh` si l'environnement Python manque.
+- **Le GPU n'est pas utilisé** : la commande `--prepare` ci-dessus doit
+  afficher `(cuda, float16)`. Vérifiez `nvidia-smi`, puis relancez
+  `./local-server/install.sh` pour installer les bibliothèques CUDA dans
+  l'environnement virtuel.
+- **Texte vide** : parlez plus fort ou augmentez la durée ; le moteur local
   filtre les silences avec VAD.
 
 ## Développement
@@ -189,8 +194,8 @@ npm run build     # bundle GUI dans dist/gui-experimental.cjs
 npm run typecheck
 ```
 
-Le serveur de plugin (`src/index.ts`) et le contrat RPC (`src/rpc.ts`) sont
-rechargés par OpenCode ; le bundle GUI est rechargé à chaque build.
+L'entrée principale du plugin (`src/index.ts`) et le contrat RPC (`src/rpc.ts`)
+sont rechargés par OpenCode ; le bundle GUI est rechargé à chaque build.
 
 ## Licence
 

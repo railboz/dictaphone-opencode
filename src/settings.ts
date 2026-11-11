@@ -6,6 +6,7 @@ export interface DictaphoneSettings {
   service: DictaphoneService
   endpoint: string
   model: string
+  localModel: string
   language: string
   apiKey: string
   prompt: string
@@ -16,6 +17,7 @@ export const DictaphoneSettingsSchema = Schema.Struct({
   service: Schema.Literals(["local", "openai", "custom"]),
   endpoint: Schema.String,
   model: Schema.String,
+  localModel: Schema.String,
   language: Schema.String,
   apiKey: Schema.String,
   prompt: Schema.String,
@@ -24,8 +26,9 @@ export const DictaphoneSettingsSchema = Schema.Struct({
 
 export const defaultSettings: DictaphoneSettings = {
   service: "local",
-  endpoint: "http://127.0.0.1:8178/transcribe",
+  endpoint: "",
   model: "whisper-1",
+  localModel: "auto",
   language: "fr",
   apiKey: "",
   prompt: "OpenCode, TypeScript, Rust, Python",
@@ -34,7 +37,7 @@ export const defaultSettings: DictaphoneSettings = {
 
 export const serviceDefaults: Record<DictaphoneService, { endpoint: string; model: string }> = {
   local: {
-    endpoint: "http://127.0.0.1:8178/transcribe",
+    endpoint: "",
     model: "whisper-1",
   },
   openai: {

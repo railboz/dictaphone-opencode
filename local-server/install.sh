@@ -1,12 +1,14 @@
 #!/usr/bin/env bash
-# Installs the local transcription server used by the dictaphone-opencode plugin.
+# Installs the local transcription engine used by the dictaphone-opencode plugin.
 #
 # Usage:
 #   ./install.sh [model]
 #
 # The model defaults to large-v3-turbo when an NVIDIA GPU is detected,
-# otherwise to small. The server listens on http://127.0.0.1:8178 and is
-# managed by the dictaphone-opencode systemd user service.
+# otherwise to small. The plugin starts the engine on demand over stdin/stdout:
+# there is no HTTP server, no port and no systemd unit.
+#
+# This script also removes the former systemd service when it is still there.
 
 set -euo pipefail
 
@@ -23,16 +25,24 @@ MODEL="${1:-$DEFAULT_MODEL}"
 SCRIPT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
 DATA_DIR="${XDG_DATA_HOME:-$HOME/.local/share}/dictaphone-opencode"
 VENV="$DATA_DIR/venv"
-UNIT_DIR="${XDG_CONFIG_HOME:-$HOME/.config}/systemd/user"
-UNIT="$UNIT_DIR/dictaphone-opencode.service"
+UNIT="${XDG_CONFIG_HOME:-$HOME/.config}/systemd/user/dictaphone-opencode.service"
 
 if ! command -v uv >/dev/null 2>&1; then
   echo "uv is required. Install it from https://docs.astral.sh/uv/getting-started/installation/" >&2
   exit 1
 fi
 
-mkdir -p "$DATA_DIR/models" "$UNIT_DIR"
+# Migrate away from the old HTTP service: the plugin now starts the engine
+# itself, so the unit would only duplicate the model in memory.
+if command -v systemctl >/dev/null 2>&1; then
+  systemctl --user disable --now dictaphone-opencode.service >/dev/null 2>&1 || true
+  systemctl --user daemon-reload >/dev/null 2>&1 || true
+fi
+rm -f "$UNIT"
+
+mkdir -p "$DATA_DIR/models"
 cp "$SCRIPT_DIR/server.py" "$DATA_DIR/server.py"
+printf '%s\n' "$MODEL" > "$DATA_DIR/model"
 
 if [[ ! -x "$VENV/bin/python" ]]; then
   uv venv --python /usr/bin/python3 "$VENV"
@@ -45,33 +55,20 @@ if [[ "$HAS_GPU" == "1" ]] && ! "$VENV/bin/python" -c 'import nvidia.cublas.lib,
   uv pip install --python "$VENV/bin/python" nvidia-cublas-cu12 'nvidia-cudnn-cu12==9.*'
 fi
 
-cat > "$UNIT" <<EOF
-[Unit]
-Description=Local transcription server for dictaphone-opencode
-After=network.target
-
-[Service]
-Type=simple
-WorkingDirectory=$DATA_DIR
-ExecStart=$VENV/bin/python $DATA_DIR/server.py --model $MODEL --device auto --beam-size 5 --port 8178
-Environment=PYTHONUNBUFFERED=1
-Environment=HF_HUB_DISABLE_TELEMETRY=1
-Restart=on-failure
-RestartSec=3
-Nice=5
-
-[Install]
-WantedBy=default.target
-EOF
-
-systemctl --user daemon-reload
-systemctl --user enable --now dictaphone-opencode.service
+echo "Preparing model $MODEL (the first run downloads it)…"
+if ! "$VENV/bin/python" "$DATA_DIR/server.py" \
+  --prepare \
+  --model "$MODEL" \
+  --model-dir "$DATA_DIR/models" \
+  --device auto \
+  --beam-size 5; then
+  echo "Warning: the model could not be prepared now; the plugin will download it on first use." >&2
+fi
 
 echo
-echo "Local transcription server installed."
-echo "  Model:    $MODEL"
-echo "  Device:   auto (CUDA if available, otherwise CPU)"
-echo "  Endpoint: http://127.0.0.1:8178/transcribe"
-echo "  Logs:     journalctl --user -u dictaphone-opencode -f"
+echo "Local transcription engine installed."
+echo "  Model:  $MODEL"
+echo "  Device: auto (CUDA if available, otherwise CPU)"
+echo "  Mode:   on-demand process started by the plugin (no server, no port)"
 echo
-echo "The first server start downloads the model (a few hundred MB to ~1.6 GB)."
+echo "Restart OpenCode Desktop to use it."

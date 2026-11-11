@@ -88,6 +88,16 @@ const setup: Plugin.Setup<typeof definition> = (ctx) => {
 
     dictationTarget = target
     try {
+      const current = settings()
+      if (current.service === "local") {
+        // Warm the local engine while the user speaks: the model loads in
+        // parallel with the recording, so stopping feels immediate.
+        void ctx.client
+          .rpc(Voice)
+          .prepare({ service: "local", localModel: current.localModel })
+          .catch(() => undefined)
+      }
+
       const next = await startRecording()
       if (ctx.signal.aborted) {
         next.cancel()
@@ -133,7 +143,9 @@ const setup: Plugin.Setup<typeof definition> = (ctx) => {
       }
 
       const current = settings()
-      if (!current.endpoint.trim()) throw new Error(ctx.t("errors.noSettings"))
+      if (current.service !== "local" && !current.endpoint.trim()) {
+        throw new Error(ctx.t("errors.noSettings"))
+      }
 
       const result = (await ctx.client.rpc(Voice).transcribe({
         audio: toBase64(wav.bytes),
@@ -142,6 +154,7 @@ const setup: Plugin.Setup<typeof definition> = (ctx) => {
         service: current.service,
         endpoint: current.endpoint.trim(),
         model: current.model.trim(),
+        localModel: current.localModel,
         language: current.language.trim() || "fr",
         prompt: current.prompt,
         apiKey: current.apiKey,
@@ -420,30 +433,52 @@ const setup: Plugin.Setup<typeof definition> = (ctx) => {
             />
           </ctx.ui.SettingsRow>
 
-          <ctx.ui.SettingsRow
-            id="dictaphone-endpoint"
-            title={ctx.t("settings.endpoint")}
-            description={ctx.t("settings.endpoint.description")}
-          >
-            <ctx.ui.TextInput
-              label={ctx.t("settings.endpoint")}
-              type="url"
-              value={value().endpoint}
-              onInput={(endpoint) => update({ endpoint })}
-            />
-          </ctx.ui.SettingsRow>
+          <Show when={value().service === "local"}>
+            <ctx.ui.SettingsRow
+              id="dictaphone-local-model"
+              title={ctx.t("settings.localModel")}
+              description={ctx.t("settings.localModel.description")}
+            >
+              <ctx.ui.Select
+                label={ctx.t("settings.localModel")}
+                value={value().localModel || "auto"}
+                onChange={(localModel) => update({ localModel })}
+                options={[
+                  { value: "auto", label: ctx.t("settings.localModel.auto") },
+                  { value: "large-v3-turbo", label: "large-v3-turbo" },
+                  { value: "large-v3", label: "large-v3" },
+                  { value: "small", label: "small" },
+                ]}
+              />
+            </ctx.ui.SettingsRow>
+          </Show>
 
-          <ctx.ui.SettingsRow
-            id="dictaphone-model"
-            title={ctx.t("settings.model")}
-            description={ctx.t("settings.model.description")}
-          >
-            <ctx.ui.TextInput
-              label={ctx.t("settings.model")}
-              value={value().model}
-              onInput={(model) => update({ model })}
-            />
-          </ctx.ui.SettingsRow>
+          <Show when={value().service !== "local"}>
+            <ctx.ui.SettingsRow
+              id="dictaphone-endpoint"
+              title={ctx.t("settings.endpoint")}
+              description={ctx.t("settings.endpoint.description")}
+            >
+              <ctx.ui.TextInput
+                label={ctx.t("settings.endpoint")}
+                type="url"
+                value={value().endpoint}
+                onInput={(endpoint) => update({ endpoint })}
+              />
+            </ctx.ui.SettingsRow>
+
+            <ctx.ui.SettingsRow
+              id="dictaphone-model"
+              title={ctx.t("settings.model")}
+              description={ctx.t("settings.model.description")}
+            >
+              <ctx.ui.TextInput
+                label={ctx.t("settings.model")}
+                value={value().model}
+                onInput={(model) => update({ model })}
+              />
+            </ctx.ui.SettingsRow>
+          </Show>
 
           <Show when={value().service !== "local"}>
             <ctx.ui.SettingsRow
@@ -521,11 +556,22 @@ const setup: Plugin.Setup<typeof definition> = (ctx) => {
       return ctx.t("settings.title")
     },
     get entries() {
+      const local = settings().service === "local"
       return [
         { id: "dictaphone-service", title: ctx.t("settings.service"), description: ctx.t("settings.service.description") },
-        { id: "dictaphone-endpoint", title: ctx.t("settings.endpoint"), description: ctx.t("settings.endpoint.description") },
-        { id: "dictaphone-model", title: ctx.t("settings.model"), description: ctx.t("settings.model.description") },
-        { id: "dictaphone-api-key", title: ctx.t("settings.apiKey"), description: ctx.t("settings.apiKey.description") },
+        ...(local
+          ? [
+              {
+                id: "dictaphone-local-model",
+                title: ctx.t("settings.localModel"),
+                description: ctx.t("settings.localModel.description"),
+              },
+            ]
+          : [
+              { id: "dictaphone-endpoint", title: ctx.t("settings.endpoint"), description: ctx.t("settings.endpoint.description") },
+              { id: "dictaphone-model", title: ctx.t("settings.model"), description: ctx.t("settings.model.description") },
+              { id: "dictaphone-api-key", title: ctx.t("settings.apiKey"), description: ctx.t("settings.apiKey.description") },
+            ]),
         { id: "dictaphone-language", title: ctx.t("settings.language"), description: ctx.t("settings.language.description") },
         { id: "dictaphone-prompt", title: ctx.t("settings.prompt"), description: ctx.t("settings.prompt.description") },
         {

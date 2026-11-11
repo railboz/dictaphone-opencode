@@ -4,13 +4,14 @@
 #   ./install.sh [model]
 #
 # - Builds the GUI bundle when npm is available and dist is missing.
-# - Installs the local transcription server (uv) unless DICTAPHONE_SKIP_SERVER=1.
+# - Installs the built-in local transcription engine (uv) unless
+#   DICTAPHONE_SKIP_SERVER=1. No server, no port, no systemd unit.
 # - Adds this directory to ~/.config/opencode/opencode.json.
 
 set -euo pipefail
 
 PLUGIN_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
-MODEL="${1:-small}"
+MODEL="${1:-}"
 CONFIG_DIR="${XDG_CONFIG_HOME:-$HOME/.config}/opencode"
 CONFIG="$CONFIG_DIR/opencode.json"
 
@@ -25,7 +26,11 @@ if [[ ! -f "$PLUGIN_DIR/dist/gui-experimental.cjs" ]]; then
 fi
 
 if [[ "${DICTAPHONE_SKIP_SERVER:-0}" != "1" ]]; then
-  "$PLUGIN_DIR/local-server/install.sh" "$MODEL"
+  if [[ -n "$MODEL" ]]; then
+    "$PLUGIN_DIR/local-server/install.sh" "$MODEL"
+  else
+    "$PLUGIN_DIR/local-server/install.sh"
+  fi
 fi
 
 mkdir -p "$CONFIG_DIR"

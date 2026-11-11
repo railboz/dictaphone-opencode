@@ -1,10 +1,12 @@
 #!/usr/bin/env python3
-"""Small local transcription HTTP server used by the dictaphone-opencode plugin.
+"""Local transcription engine used by the dictaphone-opencode plugin.
 
-It accepts either a raw audio body (the plugin's local mode) or a
-multipart/form-data request compatible with OpenAI clients.
+The plugin starts it on demand as a stdio worker: newline-delimited JSON in,
+newline-delimited JSON out. No port, no HTTP service, no systemd unit.
 
-Endpoints:
+The same script can still run as an HTTP server for advanced setups, with a
+raw audio body or a multipart/form-data request compatible with OpenAI clients:
+
   GET  /health
   POST /transcribe
   POST /inference
@@ -18,6 +20,7 @@ import base64
 import ctypes
 import json
 import os
+import sys
 import tempfile
 import threading
 from email.parser import BytesParser
@@ -50,7 +53,11 @@ def preload_cuda_libraries() -> None:
             try:
                 ctypes.CDLL(str(candidate), mode=ctypes.RTLD_GLOBAL)
             except OSError as error:
-                print(f"Could not preload {candidate}: {error}", flush=True)
+                print(
+                    f"Could not preload {candidate}: {error}",
+                    file=sys.stderr,
+                    flush=True,
+                )
             break
 
 
@@ -74,12 +81,13 @@ args: argparse.Namespace
 model: WhisperModel
 runtime_device = "cpu"
 runtime_compute_type = "int8"
-model_lock = threading.Lock()
+stdio_mode = False
 transcribe_lock = threading.Lock()
 
 
 def log(message: str) -> None:
-    print(message, flush=True)
+    """Logs to stderr in stdio mode so the JSON protocol on stdout stays clean."""
+    print(message, file=sys.stderr if stdio_mode else sys.stdout, flush=True)
 
 
 def parse_multipart(
@@ -128,6 +136,86 @@ def suffix_for(content_type: str | None, filename: str | None) -> str:
     if filename and "." in filename:
         return "." + filename.rsplit(".", 1)[1].lower()
     return ".wav"
+
+
+def transcribe_file(path: Path, language: str, prompt: str) -> tuple[str, Any]:
+    """Transcribes one audio file and returns the text and faster-whisper info."""
+    with transcribe_lock:
+        segments, info = model.transcribe(
+            str(path),
+            language=None if language.lower() in ("", "auto") else language,
+            beam_size=args.beam_size,
+            vad_filter=True,
+            vad_parameters={"min_silence_duration_ms": 300},
+            initial_prompt=prompt or None,
+            condition_on_previous_text=False,
+        )
+        text = " ".join(segment.text.strip() for segment in segments).strip()
+    return text, info
+
+
+def write_response(payload: dict[str, Any]) -> None:
+    sys.stdout.write(json.dumps(payload, ensure_ascii=False) + "\n")
+    sys.stdout.flush()
+
+
+def worker_loop() -> None:
+    """Serves one JSON request per stdin line until the parent closes the pipe."""
+    for line in sys.stdin:
+        line = line.strip()
+        if not line:
+            continue
+
+        request_id: Any = None
+        try:
+            request = json.loads(line)
+            if not isinstance(request, dict):
+                raise ValueError("The request must be a JSON object.")
+            request_id = request.get("id")
+            if request.get("type") == "ping":
+                write_response({"id": request_id, "ok": True, "text": ""})
+                continue
+
+            audio = request.get("audio")
+            if not isinstance(audio, str) or not audio:
+                raise ValueError("Missing base64 audio.")
+            data = base64.b64decode(audio, validate=True)
+            if not data:
+                raise ValueError("Empty audio.")
+
+            suffix = suffix_for(
+                request.get("mimeType")
+                if isinstance(request.get("mimeType"), str)
+                else None,
+                request.get("filename")
+                if isinstance(request.get("filename"), str)
+                else None,
+            )
+            path = Path(tempfile.mkstemp(prefix="dictation-", suffix=suffix)[1])
+            try:
+                path.write_bytes(data)
+                language = str(request.get("language") or "fr")
+                prompt = str(request.get("prompt") or "")
+                text, info = transcribe_file(path, language, prompt)
+            finally:
+                try:
+                    path.unlink()
+                except OSError:
+                    pass
+
+            write_response(
+                {
+                    "id": request_id,
+                    "ok": True,
+                    "text": text,
+                    "language": getattr(info, "language", language),
+                    "duration": round(float(getattr(info, "duration", 0.0)), 2),
+                    "model": args.model,
+                }
+            )
+        except Exception as error:  # noqa: BLE001 - report the failure to the client
+            log(f"transcription error: {error}")
+            write_response({"id": request_id, "ok": False, "error": str(error)})
 
 
 class Handler(BaseHTTPRequestHandler):
@@ -230,17 +318,7 @@ class Handler(BaseHTTPRequestHandler):
         path = Path(tempfile.mkstemp(prefix="dictation-", suffix=suffix)[1])
         try:
             path.write_bytes(audio)
-            with transcribe_lock:
-                segments, info = model.transcribe(
-                    str(path),
-                    language=None if language.lower() == "auto" else language,
-                    beam_size=args.beam_size,
-                    vad_filter=True,
-                    vad_parameters={"min_silence_duration_ms": 300},
-                    initial_prompt=prompt or None,
-                    condition_on_previous_text=False,
-                )
-                text = " ".join(segment.text.strip() for segment in segments).strip()
+            text, info = transcribe_file(path, language, prompt)
             self.send_json(
                 200,
                 {
@@ -261,15 +339,26 @@ class Handler(BaseHTTPRequestHandler):
                 pass
 
 
-def choose_device() -> str:
-    if args.device != "auto":
-        return args.device
+def cuda_available() -> bool:
     try:
         import ctranslate2
 
-        return "cuda" if ctranslate2.get_cuda_device_count() > 0 else "cpu"
+        return ctranslate2.get_cuda_device_count() > 0
     except Exception:  # noqa: BLE001 - any CUDA probe failure means CPU
-        return "cpu"
+        return False
+
+
+def choose_device() -> str:
+    if args.device != "auto":
+        return args.device
+    return "cuda" if cuda_available() else "cpu"
+
+
+def choose_model(requested: str) -> str:
+    """Auto picks large-v3-turbo on CUDA and small on CPU."""
+    if requested != "auto":
+        return requested
+    return "large-v3-turbo" if cuda_available() else "small"
 
 
 def load_model() -> tuple[WhisperModel, str, str]:
@@ -307,13 +396,27 @@ def load_model() -> tuple[WhisperModel, str, str]:
 
 
 def main() -> None:
-    global args, model
+    global args, model, stdio_mode
     parser = argparse.ArgumentParser(
-        description="Local transcription server for dictaphone-opencode"
+        description="Local transcription engine for dictaphone-opencode"
     )
     parser.add_argument("--host", default="127.0.0.1")
     parser.add_argument("--port", type=int, default=8178)
-    parser.add_argument("--model", default="large-v3-turbo")
+    parser.add_argument(
+        "--stdio",
+        action="store_true",
+        help="Read newline-delimited JSON requests on stdin and answer on stdout.",
+    )
+    parser.add_argument(
+        "--prepare",
+        action="store_true",
+        help="Load the model once and exit, used by the installer.",
+    )
+    parser.add_argument(
+        "--model",
+        default="auto",
+        help="Model name, or auto (large-v3-turbo on CUDA, small on CPU).",
+    )
     parser.add_argument(
         "--model-dir",
         default=str(Path.home() / ".local/share/dictaphone-opencode/models"),
@@ -327,11 +430,29 @@ def main() -> None:
     )
     parser.add_argument("--beam-size", type=int, default=5)
     args = parser.parse_args()
+    stdio_mode = args.stdio
 
     Path(args.model_dir).mkdir(parents=True, exist_ok=True)
+    args.model = choose_model(args.model)
     log(f"loading model {args.model} (first run downloads it)…")
     model, device, compute_type = load_model()
     log(f"model ready on {args.model} ({device}, {compute_type})")
+
+    if args.prepare:
+        return
+
+    if args.stdio:
+        write_response(
+            {
+                "type": "ready",
+                "model": args.model,
+                "device": device,
+                "compute_type": compute_type,
+            }
+        )
+        worker_loop()
+        return
+
     server = ThreadingHTTPServer((args.host, args.port), Handler)
     log(f"listening on http://{args.host}:{args.port}")
     server.serve_forever()

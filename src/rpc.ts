@@ -14,6 +14,26 @@ export const Voice = {
   id: "dictaphone",
   events: {},
   methods: {
+    prepare: {
+      input: {
+        type: "object",
+        properties: {
+          service: { type: "string", enum: ["local", "openai", "custom"] },
+          localModel: { type: "string" },
+        },
+        required: ["service"],
+        additionalProperties: false,
+      },
+      output: {
+        type: "object",
+        properties: {
+          ok: { type: "boolean" },
+          error: { type: "string" },
+        },
+        required: ["ok", "error"],
+        additionalProperties: false,
+      },
+    },
     transcribe: {
       input: {
         type: "object",
@@ -24,6 +44,7 @@ export const Voice = {
           service: { type: "string", enum: ["local", "openai", "custom"] },
           endpoint: { type: "string" },
           model: { type: "string" },
+          localModel: { type: "string" },
           language: { type: "string" },
           prompt: { type: "string" },
           apiKey: { type: "string" },
@@ -62,6 +83,7 @@ export interface TranscribeInput {
   service: "local" | "openai" | "custom"
   endpoint: string
   model: string
+  localModel: string
   language: string
   prompt: string
   apiKey: string
